@@ -2,8 +2,7 @@
 #include "grid.h"
 #include "particle.h"
 
-// Linear interpolation weight — how much a particle
-// at position 'x' contributes to grid node at 'node'
+// Linear interpolation weight
 inline float weight(float x, float node) {
     float d = std::abs(x - node);
     return (d < 1.f) ? (1.f - d) : 0.f;
@@ -20,13 +19,12 @@ inline void p2g_transfer(MACGrid& grid, ParticleSystem& psys) {
         float gy = (p.y + 1.0f) / dx;
         float gz = (p.z + 1.0f) / dx;
 
-        // Base cell index
+      
         int i = (int)gx;
         int j = (int)gy;
         int k = (int)gz;
 
         // Splat onto u-faces (x velocity component)
-        // u is staggered in x, so offset by 0.5 in x
         for (int di = 0; di <= 1; di++)
             for (int dj = 0; dj <= 1; dj++)
                 for (int dk = 0; dk <= 1; dk++) {
@@ -38,9 +36,9 @@ inline void p2g_transfer(MACGrid& grid, ParticleSystem& psys) {
                     if (nj < 0 || nj >= grid.ny) continue;
                     if (nk < 0 || nk >= grid.nz) continue;
 
-                    float wx = weight(gx, ni);         // staggered x
-                    float wy = weight(gy, nj + 0.5f);  // centred y
-                    float wz = weight(gz, nk + 0.5f);  // centred z
+                    float wx = weight(gx, ni);         
+                    float wy = weight(gy, nj + 0.5f);  
+                    float wz = weight(gz, nk + 0.5f);  
                     float w = wx * wy * wz;
 
                     int idx = ni + (grid.nx + 1) * (nj + grid.ny * nk);
@@ -61,7 +59,7 @@ inline void p2g_transfer(MACGrid& grid, ParticleSystem& psys) {
                     if (nk < 0 || nk >= grid.nz) continue;
 
                     float wx = weight(gx, ni + 0.5f);
-                    float wy = weight(gy, nj);         // staggered y
+                    float wy = weight(gy, nj);         
                     float wz = weight(gz, nk + 0.5f);
                     float w = wx * wy * wz;
 

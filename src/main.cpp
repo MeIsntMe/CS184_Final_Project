@@ -153,7 +153,7 @@ int main() {
     float dx = domain_size / grid_res;
     MACGrid grid(grid_res, grid_res, grid_res, dx);
 
-    // Build initial position buffer (x, y only — your shader uses vec2)
+    // Build initial position buffer
     std::vector<float> pos_buffer;
     pos_buffer.reserve(particleSys.particles.size() * 3);
     for (auto& p : particleSys.particles) {
