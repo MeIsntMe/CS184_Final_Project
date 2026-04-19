@@ -143,53 +143,59 @@ int main() {
     GLuint shader_program = create_shader_program();
 
     ParticleSystem particleSys;
-    particleSys.initialise_particles(5);
+    particleSys.initialise_particles(1000);
 
-    GLuint vao = 0;
-    GLuint vbo = 0;
+    // Build initial position buffer (x, y only — your shader uses vec2)
+    std::vector<float> pos_buffer;
+    pos_buffer.reserve(particleSys.particles.size() * 3);
+    for (auto& p : particleSys.particles) {
+        pos_buffer.push_back(p.x);
+        pos_buffer.push_back(p.y);
+        pos_buffer.push_back(p.z);
+    }
 
+    GLuint vao = 0, vbo = 0;
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
-
     glBindVertexArray(vao);
-
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, particleSys.particles.size() * sizeof(Particle), particleSys.particles.data(), GL_STATIC_DRAW);
-
-    glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        sizeof(Particle),
-        (void*)0
-    );
+    glBufferData(GL_ARRAY_BUFFER,
+        pos_buffer.size() * sizeof(float),
+        pos_buffer.data(),
+        GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
+        3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-
-    // glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    float last_time = static_cast<float>(glfwGetTime());
+    glEnable(GL_PROGRAM_POINT_SIZE);
+
+    float prev_time = static_cast<float>(glfwGetTime());
 
     while (!glfwWindowShouldClose(window)) {
         process_input(window);
-        frame_step(last_time, particleSys);
+
+        frame_step(prev_time, particleSys);
+
+        pos_buffer.clear();
+        for (auto& p : particleSys.particles) {
+            pos_buffer.push_back(p.x);
+            pos_buffer.push_back(p.y);
+            pos_buffer.push_back(p.z);
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0,
+            pos_buffer.size() * sizeof(float),
+            pos_buffer.data());
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
 
         glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-        glBufferData(
-            GL_ARRAY_BUFFER,
-            particleSys.particles.size() * sizeof(Particle), 
-            particleSys.particles.data(),
-            GL_DYNAMIC_DRAW
-        );
-
         glUseProgram(shader_program);
         glBindVertexArray(vao);
-        glDrawArrays(GL_POINTS, 0, particleSys.particles.size());
+        glDrawArrays(GL_POINTS, 0, (GLsizei)particleSys.particles.size());
 
         glfwSwapBuffers(window);
         glfwPollEvents();

@@ -4,3 +4,4 @@ private/
 build/
 
 CMakePresets.json
+.vs/
