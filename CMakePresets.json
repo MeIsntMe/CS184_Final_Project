@@ -7,7 +7,7 @@
       "generator": "Visual Studio 17 2022",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "C:/Users/grace/Desktop/Uni/Y3/CS184/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "path/to/vcpkg",
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     }
