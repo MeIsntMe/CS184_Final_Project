@@ -1,5 +1,6 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include "sim/particle.h"
 
 #include <iostream>
 #include <vector>
@@ -38,11 +39,22 @@ static GLuint compile_shader(GLenum type, const char* source) {
 static GLuint create_shader_program() {
     const char* vertex_shader_source = R"(
         #version 330 core
-        layout (location = 0) in vec2 aPos;
+        layout (location = 0) in vec3 aPos;
 
         void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
-            gl_PointSize = 12.0;
+            float z = -aPos.z;
+
+            if (z <= 0.01) {
+                gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+                gl_PointSize = 1.0;
+                return;
+            }
+
+            float focal = 1.2;
+            vec2 projected = (aPos.xy / z) * focal;
+
+            gl_Position = vec4(projected, 0.0, 1.0);
+            gl_PointSize = 18.0 / z;
         }
     )";
 
@@ -81,6 +93,16 @@ static GLuint create_shader_program() {
     return program;
 }
 
+static void frame_step(float& prev_time, ParticleSystem &partSys) {
+    float new_time = static_cast<float>(glfwGetTime());
+    float dt = new_time - prev_time;
+    prev_time = new_time;
+
+    partSys.step(dt);
+
+    return;
+}
+
 int main() {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
@@ -95,7 +117,7 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    GLFWwindow* window = glfwCreateWindow(900, 700, "Stream Processor - Phase 1 Test", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(900, 700, "Stream Processor - 3D Test", nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
         glfwTerminate();
@@ -112,17 +134,16 @@ int main() {
         return -1;
     }
 
+    glEnable(GL_DEPTH_TEST);
+
     std::cout << "OpenGL Vendor:   " << glGetString(GL_VENDOR) << "\n";
     std::cout << "OpenGL Renderer: " << glGetString(GL_RENDERER) << "\n";
     std::cout << "OpenGL Version:  " << glGetString(GL_VERSION) << "\n";
 
     GLuint shader_program = create_shader_program();
 
-    float points[] = {
-        -0.5f, -0.2f,
-         0.0f,  0.4f,
-         0.5f, -0.2f
-    };
+    ParticleSystem particleSys;
+    particleSys.initialise_particles(5);
 
     GLuint vao = 0;
     GLuint vbo = 0;
@@ -133,30 +154,42 @@ int main() {
     glBindVertexArray(vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(points), points, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, particleSys.particles.size() * sizeof(Particle), particleSys.particles.data(), GL_STATIC_DRAW);
 
     glVertexAttribPointer(
-        0,              // location
-        2,              // vec2
+        0,
+        3,
         GL_FLOAT,
         GL_FALSE,
-        2 * sizeof(float),
+        sizeof(Particle),
         (void*)0
     );
     glEnableVertexAttribArray(0);
 
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    // glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
+
+    float last_time = static_cast<float>(glfwGetTime());
 
     while (!glfwWindowShouldClose(window)) {
         process_input(window);
+        frame_step(last_time, particleSys);
 
         glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            particleSys.particles.size() * sizeof(Particle), 
+            particleSys.particles.data(),
+            GL_DYNAMIC_DRAW
+        );
 
         glUseProgram(shader_program);
         glBindVertexArray(vao);
-        glDrawArrays(GL_POINTS, 0, 3);
+        glDrawArrays(GL_POINTS, 0, particleSys.particles.size());
 
         glfwSwapBuffers(window);
         glfwPollEvents();

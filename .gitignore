@@ -2,3 +2,5 @@
 
 private/
 build/
+
+CMakePresets.json

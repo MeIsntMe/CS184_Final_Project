@@ -25,6 +25,7 @@ target_include_directories(glad PUBLIC external/glad/include)
 
 set(SRC_FILES
     src/main.cpp
+    src/sim/particle.cpp
 )
 
 add_executable(stream_processor ${SRC_FILES})
