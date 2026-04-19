@@ -19,16 +19,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(OpenGL REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 
-add_library(glad external/glad/src/glad.c)
+add_library(glad external/glad/src/glad.c "src/sim/p2g.h")
 set_target_properties(glad PROPERTIES LINKER_LANGUAGE C)
 target_include_directories(glad PUBLIC external/glad/include)
 
 set(SRC_FILES
     src/main.cpp
     src/sim/particle.cpp
+    src/sim/grid.cpp
 )
 
-add_executable(stream_processor ${SRC_FILES})
+add_executable(stream_processor ${SRC_FILES} "src/sim/p2g.h")
 
 target_include_directories(stream_processor PRIVATE
     src
