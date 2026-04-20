@@ -155,12 +155,12 @@ int main() {
 
     // Build initial position buffer
     std::vector<float> pos_buffer;
-    /*pos_buffer.reserve(particleSys.particles.size() * 3);
-    for (auto& p : particleSys.particles) {
-        pos_buffer.push_back(p.x);
-        pos_buffer.push_back(p.y);
-        pos_buffer.push_back(p.z);
-    }*/
+    pos_buffer.reserve(particleSys.h_x.size() * 3);
+    for (int i = 0; i < particleSys.count; i++) {
+        pos_buffer.push_back(particleSys.h_x[i]);
+        pos_buffer.push_back(particleSys.h_y[i]);
+        pos_buffer.push_back(particleSys.h_y[i]);
+    }
 
     GLuint vao = 0, vbo = 0;
     glGenVertexArrays(1, &vao);

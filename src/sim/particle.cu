@@ -10,17 +10,17 @@
 __global__ void simulate_particle(int count, float dt, DeviceParticles dp) {
     const float gravity = 9.81f;
 
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index < count) {
-        dp.d_vy[i] -= gravity * dt;
-        dp.d_x[i] += ps.d_vx[i] * dt;
-        dp.d_y[i] += ps.d_vy[i] * dt;
+    if (i < count) {
+        dp.vy[i] -= gravity * dt;
+        dp.x[i] += dp.vx[i] * dt;
+        dp.y[i] += dp.vy[i] * dt;
 
-        if (ps.d_x[i] < -1.f) { ps.d_x[i] = -1.f; ps.d_vx[i] *= -0.5f; }
-        if (ps.d_x[i] > 1.f) { ps.d_x[i] = 1.f; ps.d_vx[i] *= -0.5f; }
-        if (ps.d_y[i] < -1.f) { ps.d_y[i] = -1.f; ps.d_vy[i] *= -0.5f; }
-        if (ps.d_y[i] > 1.f) { ps.d_y[i] = 1.f; ps.d_vy[i] *= -0.5f; }
+        if (dp.x[i] < -1.f) { dp.x[i] = -1.f; dp.vx[i] *= -0.5f; }
+        if (dp.x[i] > 1.f) { dp.x[i] = 1.f; dp.vx[i] *= -0.5f; }
+        if (dp.y[i] < -1.f) { dp.y[i] = -1.f; dp.vy[i] *= -0.5f; }
+        if (dp.y[i] > 1.f) { dp.y[i] = 1.f; dp.vy[i] *= -0.5f; }
     }
 
 }
@@ -118,10 +118,13 @@ void ParticleSystem::step(float dt) {
     int blocks_per_grid = (count + threads_per_block - 1) / threads_per_block;
 
     simulate_particle <<< blocks_per_grid, threads_per_block >>> (count, dt, dp);
+    // temporary code to sync back to CPU to render
+    cudaDeviceSynchronize();
+    thrust::copy(d_x.begin(), d_x.end(), h_x.begin());
+    thrust::copy(d_y.begin(), d_y.end(), h_y.begin());
+    thrust::copy(d_z.begin(), d_z.end(), h_z.begin());
     // particle to grid kernel
     // grid solver kernel
     // grid to particle (transfer difference in velocity back)
-
-
 }
 
