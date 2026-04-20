@@ -1,3 +1,8 @@
+#ifdef __INTELLISENSE__
+    #define __CUDACC__
+#endif
+
+
 #include <random>
 #include <thrust/device_vector.h>
 #include "particle.h"
@@ -77,6 +82,12 @@ bool ParticleSystem::initialise_particles(int count) {
 
 void ParticleSystem::step(float dt) {
     const float gravity = 9.81f;
+
+    //plan:
+    // particle sim kernel
+    // particle to grid kernel
+    // grid solver kernel
+    // grid to particle (transfer difference in velocity back)
 
     /*for (Particle& p : particles) {
         p.vy -= gravity * dt;
