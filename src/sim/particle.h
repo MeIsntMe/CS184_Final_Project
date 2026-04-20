@@ -8,15 +8,10 @@
 
 
 
-struct Particle {
-    float x, y, z;
-    float vx, vy, vz;
-    float fx, fy, fz;
-};
-
-struct ParticleStorage {
-    Particle* particles;
-    int count;
+struct DeviceParticles {
+    float *x, *y, *z;
+    float *vx, *vy, *vz;
+    //float fx, fy, fz;
 };
 
 class ParticleSystem{
@@ -26,6 +21,8 @@ class ParticleSystem{
 
         bool initialise_particles(int count);
         void step(float dt);
+
+        int count;
 
         // Host (CPU vectors just for initialization and maybe other stuff not sure yet)
         std::vector<float> h_x;
@@ -41,17 +38,17 @@ class ParticleSystem{
         std::vector<float> h_fz;
 
         // Device (GPU vectors for simulation)
-        float* d_x;
-        float* d_y;
-        float* d_z;
+        thrust::device_vector<float> d_x;
+        thrust::device_vector<float> d_y;
+        thrust::device_vector<float> d_z;
 
-        float* d_vx;
-        float* d_vy;
-        float* d_vz;
+        thrust::device_vector<float> d_vx;
+        thrust::device_vector<float> d_vy;
+        thrust::device_vector<float> d_vz;
 
-        float* d_fx;
-        float* d_fy;
-        float* d_fz;
+        thrust::device_vector<float> d_fx;
+        thrust::device_vector<float> d_fy;
+        thrust::device_vector<float> d_fz;
     private:
         void destroyParticle();
         

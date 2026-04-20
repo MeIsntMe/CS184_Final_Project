@@ -7,6 +7,24 @@
 #include <thrust/device_vector.h>
 #include "particle.h"
 
+__global__ void simulate_particle(int count, float dt, DeviceParticles dp) {
+    const float gravity = 9.81f;
+
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index < count) {
+        dp.d_vy[i] -= gravity * dt;
+        dp.d_x[i] += ps.d_vx[i] * dt;
+        dp.d_y[i] += ps.d_vy[i] * dt;
+
+        if (ps.d_x[i] < -1.f) { ps.d_x[i] = -1.f; ps.d_vx[i] *= -0.5f; }
+        if (ps.d_x[i] > 1.f) { ps.d_x[i] = 1.f; ps.d_vx[i] *= -0.5f; }
+        if (ps.d_y[i] < -1.f) { ps.d_y[i] = -1.f; ps.d_vy[i] *= -0.5f; }
+        if (ps.d_y[i] > 1.f) { ps.d_y[i] = 1.f; ps.d_vy[i] *= -0.5f; }
+    }
+
+}
+
 ParticleSystem::ParticleSystem() {
     // h for host (to distinguish from container for GPU)
     h_x = std::vector<float>();
@@ -66,17 +84,19 @@ bool ParticleSystem::initialise_particles(int count) {
     }
 
     // putting vectors in VRAM:
-    thrust::device_vector<float> d_x = h_x;
-    thrust::device_vector<float> d_y = h_y;
-    thrust::device_vector<float> d_z = h_z;
+    d_x = h_x;
+    d_y = h_y;
+    d_z = h_z;
 
-    thrust::device_vector<float> d_vx = h_vx;
-    thrust::device_vector<float> d_vy = h_vy;
-    thrust::device_vector<float> d_vz = h_vz;
+    d_vx = h_vx;
+    d_vy = h_vy;
+    d_vz = h_vz;
 
-    thrust::device_vector<float> d_fx = h_fx;
-    thrust::device_vector<float> d_fy = h_fy;
-    thrust::device_vector<float> d_fz = h_fz;
+    d_fx = h_fx;
+    d_fy = h_fy;
+    d_fz = h_fz;
+
+    this->count = count;
     return true;
 }
 
@@ -85,19 +105,23 @@ void ParticleSystem::step(float dt) {
 
     //plan:
     // particle sim kernel
+    // create struct to send data to GPU:
+    DeviceParticles dp;
+    dp.x = thrust::raw_pointer_cast(d_x.data());
+    dp.y = thrust::raw_pointer_cast(d_y.data());
+    dp.z = thrust::raw_pointer_cast(d_z.data());
+    dp.vx = thrust::raw_pointer_cast(d_vx.data());
+    dp.vy = thrust::raw_pointer_cast(d_vy.data());
+    dp.vz = thrust::raw_pointer_cast(d_vz.data());
+
+    int threads_per_block = 256;
+    int blocks_per_grid = (count + threads_per_block - 1) / threads_per_block;
+
+    simulate_particle <<< blocks_per_grid, threads_per_block >>> (count, dt, dp);
     // particle to grid kernel
     // grid solver kernel
     // grid to particle (transfer difference in velocity back)
 
-    /*for (Particle& p : particles) {
-        p.vy -= gravity * dt;
 
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-
-        if (p.x < -1.f) { p.x = -1.f; p.vx *= -0.5f; }
-        if (p.x > 1.f) { p.x = 1.f; p.vx *= -0.5f; }
-        if (p.y < -1.f) { p.y = -1.f; p.vy *= -0.5f; }
-        if (p.y > 1.f) { p.y = 1.f; p.vy *= -0.5f; }
-    }*/
 }
+
