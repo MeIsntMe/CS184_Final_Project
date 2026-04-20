@@ -101,6 +101,7 @@ static void frame_step(float& prev_time, ParticleSystem &partSys) {
     float dt = new_time - prev_time;
     prev_time = new_time;
 
+    std::cout << dt << "\n";
     partSys.step(dt);
 
     return;
@@ -159,7 +160,7 @@ int main() {
     for (int i = 0; i < particleSys.count; i++) {
         pos_buffer.push_back(particleSys.h_x[i]);
         pos_buffer.push_back(particleSys.h_y[i]);
-        pos_buffer.push_back(particleSys.h_y[i]);
+        pos_buffer.push_back(particleSys.h_z[i]);
     }
 
     GLuint vao = 0, vbo = 0;
@@ -186,22 +187,22 @@ int main() {
 
         frame_step(prev_time, particleSys);
        
-        p2g_transfer(grid, particleSys);
+        //p2g_transfer(grid, particleSys);
 
 
         //debug block, remove after working
         float min_x = 999, max_x = -999;
         float min_y = 999, max_y = -999;
-        //for (auto& p : particleSys.particles) {
-        //    min_x = std::min(min_x, p.x);
-        //    max_x = std::max(max_x, p.x);
-        //    min_y = std::min(min_y, p.y);
-        //    max_y = std::max(max_y, p.y);
-        //}
-        //std::cout << "Particle x range: " << min_x << " to " << max_x << "\n";
-        //std::cout << "Particle y range: " << min_y << " to " << max_y << "\n";
-        //std::cout << "dx = " << grid.dx << "\n";
-        //std::cout << "Grid size: " << grid.nx << "x" << grid.ny << "x" << grid.nz << "\n";
+        for (int i = 0; i < particleSys.count; i++) {
+            min_x = min(min_x, particleSys.h_x[i]);
+            max_x = max(max_x, particleSys.h_x[i]);
+            min_y = min(min_y, particleSys.h_y[i]);
+            max_y = max(max_y, particleSys.h_y[i]);
+        }
+        std::cout << "Particle x range: " << min_x << " to " << max_x << "\n";
+        std::cout << "Particle y range: " << min_y << " to " << max_y << "\n";
+        std::cout << "dx = " << grid.dx << "\n";
+        std::cout << "Grid size: " << grid.nx << "x" << grid.ny << "x" << grid.nz << "\n";
 
         //// Check all vel_v not just cell-centred array
         //int nonzero = 0;
@@ -216,12 +217,12 @@ int main() {
         //std::cout << "Non-zero vel_u count: " << nonzero << "\n";
         ////end of debug block
 
-        //pos_buffer.clear();
-        //for (auto& p : particleSys.particles) {
-        //    pos_buffer.push_back(p.x);
-        //    pos_buffer.push_back(p.y);
-        //    pos_buffer.push_back(p.z);
-        //}
+        pos_buffer.clear();
+        for (int i = 0; i < particleSys.count; i++) {
+            pos_buffer.push_back(particleSys.h_x[i]);
+            pos_buffer.push_back(particleSys.h_y[i]);
+            pos_buffer.push_back(particleSys.h_z[i]);
+        }
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferSubData(GL_ARRAY_BUFFER, 0,
             pos_buffer.size() * sizeof(float),
@@ -233,7 +234,7 @@ int main() {
 
         glUseProgram(shader_program);
         glBindVertexArray(vao);
-       // glDrawArrays(GL_POINTS, 0, (GLsizei)particleSys.particles.size());
+        glDrawArrays(GL_POINTS, 0, particleSys.count);
 
         glfwSwapBuffers(window);
         glfwPollEvents();

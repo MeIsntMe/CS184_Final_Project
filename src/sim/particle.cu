@@ -119,6 +119,8 @@ void ParticleSystem::step(float dt) {
 
     simulate_particle <<< blocks_per_grid, threads_per_block >>> (count, dt, dp);
     // temporary code to sync back to CPU to render
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) std::cout << "CUDA Error: " << cudaGetErrorString(err) << "\n";
     cudaDeviceSynchronize();
     thrust::copy(d_x.begin(), d_x.end(), h_x.begin());
     thrust::copy(d_y.begin(), d_y.end(), h_y.begin());
