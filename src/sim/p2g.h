@@ -13,61 +13,61 @@ inline void p2g_transfer(MACGrid& grid, ParticleSystem& psys) {
 
     float dx = grid.dx;
 
-    for (auto& p : psys.particles) {
-        // Convert world position to grid coordinates
-        float gx = (p.x + 1.0f) / dx;
-        float gy = (p.y + 1.0f) / dx;
-        float gz = (p.z + 1.0f) / dx;
+    //for (auto& p : psys.particles) {
+    //    // Convert world position to grid coordinates
+    //    float gx = (p.x + 1.0f) / dx;
+    //    float gy = (p.y + 1.0f) / dx;
+    //    float gz = (p.z + 1.0f) / dx;
 
-      
-        int i = (int)gx;
-        int j = (int)gy;
-        int k = (int)gz;
+    //  
+    //    int i = (int)gx;
+    //    int j = (int)gy;
+    //    int k = (int)gz;
 
-        // Splat onto u-faces (x velocity component)
-        for (int di = 0; di <= 1; di++)
-            for (int dj = 0; dj <= 1; dj++)
-                for (int dk = 0; dk <= 1; dk++) {
-                    int ni = i + di;
-                    int nj = j + dj;
-                    int nk = k + dk;
+    //    // Splat onto u-faces (x velocity component)
+    //    for (int di = 0; di <= 1; di++)
+    //        for (int dj = 0; dj <= 1; dj++)
+    //            for (int dk = 0; dk <= 1; dk++) {
+    //                int ni = i + di;
+    //                int nj = j + dj;
+    //                int nk = k + dk;
 
-                    if (ni < 0 || ni > grid.nx) continue;
-                    if (nj < 0 || nj >= grid.ny) continue;
-                    if (nk < 0 || nk >= grid.nz) continue;
+    //                if (ni < 0 || ni > grid.nx) continue;
+    //                if (nj < 0 || nj >= grid.ny) continue;
+    //                if (nk < 0 || nk >= grid.nz) continue;
 
-                    float wx = weight(gx, ni);         
-                    float wy = weight(gy, nj + 0.5f);  
-                    float wz = weight(gz, nk + 0.5f);  
-                    float w = wx * wy * wz;
+    //                float wx = weight(gx, ni);         
+    //                float wy = weight(gy, nj + 0.5f);  
+    //                float wz = weight(gz, nk + 0.5f);  
+    //                float w = wx * wy * wz;
 
-                    int idx = ni + (grid.nx + 1) * (nj + grid.ny * nk);
-                    grid.vel_u[idx] += w * p.vx;
-                    grid.weight_u[idx] += w;
-                }
+    //                int idx = ni + (grid.nx + 1) * (nj + grid.ny * nk);
+    //                grid.vel_u[idx] += w * p.vx;
+    //                grid.weight_u[idx] += w;
+    //            }
 
-        // Splat onto v-faces (y velocity component)
-        for (int di = 0; di <= 1; di++)
-            for (int dj = 0; dj <= 1; dj++)
-                for (int dk = 0; dk <= 1; dk++) {
-                    int ni = i + di;
-                    int nj = j + dj;
-                    int nk = k + dk;
+    //    // Splat onto v-faces (y velocity component)
+    //    for (int di = 0; di <= 1; di++)
+    //        for (int dj = 0; dj <= 1; dj++)
+    //            for (int dk = 0; dk <= 1; dk++) {
+    //                int ni = i + di;
+    //                int nj = j + dj;
+    //                int nk = k + dk;
 
-                    if (ni < 0 || ni >= grid.nx) continue;
-                    if (nj < 0 || nj > grid.ny) continue;
-                    if (nk < 0 || nk >= grid.nz) continue;
+    //                if (ni < 0 || ni >= grid.nx) continue;
+    //                if (nj < 0 || nj > grid.ny) continue;
+    //                if (nk < 0 || nk >= grid.nz) continue;
 
-                    float wx = weight(gx, ni + 0.5f);
-                    float wy = weight(gy, nj);         
-                    float wz = weight(gz, nk + 0.5f);
-                    float w = wx * wy * wz;
+    //                float wx = weight(gx, ni + 0.5f);
+    //                float wy = weight(gy, nj);         
+    //                float wz = weight(gz, nk + 0.5f);
+    //                float w = wx * wy * wz;
 
-                    int idx = ni + grid.nx * (nj + (grid.ny + 1) * nk);
-                    grid.vel_v[idx] += w * p.vy;
-                    grid.weight_v[idx] += w;
-                }
-    }
+    //                int idx = ni + grid.nx * (nj + (grid.ny + 1) * nk);
+    //                grid.vel_v[idx] += w * p.vy;
+    //                grid.weight_v[idx] += w;
+    //            }
+    //}
 
     // Normalise — divide accumulated velocity by total weight
     for (int i = 0; i < (int)grid.vel_u.size(); i++)

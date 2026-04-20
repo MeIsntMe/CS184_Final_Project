@@ -155,12 +155,12 @@ int main() {
 
     // Build initial position buffer
     std::vector<float> pos_buffer;
-    pos_buffer.reserve(particleSys.particles.size() * 3);
+    /*pos_buffer.reserve(particleSys.particles.size() * 3);
     for (auto& p : particleSys.particles) {
         pos_buffer.push_back(p.x);
         pos_buffer.push_back(p.y);
         pos_buffer.push_back(p.z);
-    }
+    }*/
 
     GLuint vao = 0, vbo = 0;
     glGenVertexArrays(1, &vao);
@@ -192,36 +192,36 @@ int main() {
         //debug block, remove after working
         float min_x = 999, max_x = -999;
         float min_y = 999, max_y = -999;
-        for (auto& p : particleSys.particles) {
-            min_x = std::min(min_x, p.x);
-            max_x = std::max(max_x, p.x);
-            min_y = std::min(min_y, p.y);
-            max_y = std::max(max_y, p.y);
-        }
-        std::cout << "Particle x range: " << min_x << " to " << max_x << "\n";
-        std::cout << "Particle y range: " << min_y << " to " << max_y << "\n";
-        std::cout << "dx = " << grid.dx << "\n";
-        std::cout << "Grid size: " << grid.nx << "x" << grid.ny << "x" << grid.nz << "\n";
+        //for (auto& p : particleSys.particles) {
+        //    min_x = std::min(min_x, p.x);
+        //    max_x = std::max(max_x, p.x);
+        //    min_y = std::min(min_y, p.y);
+        //    max_y = std::max(max_y, p.y);
+        //}
+        //std::cout << "Particle x range: " << min_x << " to " << max_x << "\n";
+        //std::cout << "Particle y range: " << min_y << " to " << max_y << "\n";
+        //std::cout << "dx = " << grid.dx << "\n";
+        //std::cout << "Grid size: " << grid.nx << "x" << grid.ny << "x" << grid.nz << "\n";
 
-        // Check all vel_v not just cell-centred array
-        int nonzero = 0;
-        for (int i = 0; i < (int)grid.vel_v.size(); i++)
-            if (grid.vel_v[i] != 0.f) nonzero++;
-        std::cout << "Non-zero vel_v count: " << nonzero << "\n";
+        //// Check all vel_v not just cell-centred array
+        //int nonzero = 0;
+        //for (int i = 0; i < (int)grid.vel_v.size(); i++)
+        //    if (grid.vel_v[i] != 0.f) nonzero++;
+        //std::cout << "Non-zero vel_v count: " << nonzero << "\n";
 
-        // Check vel_u too
-        nonzero = 0;
-        for (int i = 0; i < (int)grid.vel_u.size(); i++)
-            if (grid.vel_u[i] != 0.f) nonzero++;
-        std::cout << "Non-zero vel_u count: " << nonzero << "\n";
-        //end of debug block
+        //// Check vel_u too
+        //nonzero = 0;
+        //for (int i = 0; i < (int)grid.vel_u.size(); i++)
+        //    if (grid.vel_u[i] != 0.f) nonzero++;
+        //std::cout << "Non-zero vel_u count: " << nonzero << "\n";
+        ////end of debug block
 
-        pos_buffer.clear();
-        for (auto& p : particleSys.particles) {
-            pos_buffer.push_back(p.x);
-            pos_buffer.push_back(p.y);
-            pos_buffer.push_back(p.z);
-        }
+        //pos_buffer.clear();
+        //for (auto& p : particleSys.particles) {
+        //    pos_buffer.push_back(p.x);
+        //    pos_buffer.push_back(p.y);
+        //    pos_buffer.push_back(p.z);
+        //}
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferSubData(GL_ARRAY_BUFFER, 0,
             pos_buffer.size() * sizeof(float),
@@ -233,7 +233,7 @@ int main() {
 
         glUseProgram(shader_program);
         glBindVertexArray(vao);
-        glDrawArrays(GL_POINTS, 0, (GLsizei)particleSys.particles.size());
+       // glDrawArrays(GL_POINTS, 0, (GLsizei)particleSys.particles.size());
 
         glfwSwapBuffers(window);
         glfwPollEvents();
