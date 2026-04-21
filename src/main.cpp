@@ -3,7 +3,6 @@
 
 #include "sim/particle.h"
 #include "sim/grid.h"
-#include "sim/p2g.h"
 
 #include <iostream>
 #include <vector>
@@ -152,7 +151,7 @@ int main() {
     float domain_size = 2.0f;
     int   grid_res = 32;
     float dx = domain_size / grid_res;
-    MACGrid grid(grid_res, grid_res, grid_res, dx);
+    //MACGrid grid(grid_res, grid_res, grid_res, dx);
 
     // Build initial position buffer
     std::vector<float> pos_buffer;
@@ -201,8 +200,8 @@ int main() {
         }
         std::cout << "Particle x range: " << min_x << " to " << max_x << "\n";
         std::cout << "Particle y range: " << min_y << " to " << max_y << "\n";
-        std::cout << "dx = " << grid.dx << "\n";
-        std::cout << "Grid size: " << grid.nx << "x" << grid.ny << "x" << grid.nz << "\n";
+        /*std::cout << "dx = " << grid.dx << "\n";
+        std::cout << "Grid size: " << grid.nx << "x" << grid.ny << "x" << grid.nz << "\n";*/
 
         //// Check all vel_v not just cell-centred array
         //int nonzero = 0;

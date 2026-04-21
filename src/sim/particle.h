@@ -51,5 +51,6 @@ class ParticleSystem{
         thrust::device_vector<float> d_fz;
     private:
         void destroyParticle();
+        DeviceParticles get_device_particles();
         
 };

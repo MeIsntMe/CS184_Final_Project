@@ -17,7 +17,7 @@ set(SRC_FILES
     src/sim/particle.cu 
     src/sim/grid.cpp
     src/sim/particle.h
-    src/sim/p2g.h
+    src/sim/p2g.cuh
 )
 
 # --- 4. Targets ---

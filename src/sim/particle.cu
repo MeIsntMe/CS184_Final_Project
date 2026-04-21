@@ -6,6 +6,7 @@
 #include <random>
 #include <thrust/device_vector.h>
 #include "particle.h"
+#include "sim/p2g.cuh"
 
 __global__ void simulate_particle(int count, float dt, DeviceParticles dp) {
     const float gravity = 9.81f;
@@ -106,13 +107,7 @@ void ParticleSystem::step(float dt) {
     //plan:
     // particle sim kernel
     // create struct to send data to GPU:
-    DeviceParticles dp;
-    dp.x = thrust::raw_pointer_cast(d_x.data());
-    dp.y = thrust::raw_pointer_cast(d_y.data());
-    dp.z = thrust::raw_pointer_cast(d_z.data());
-    dp.vx = thrust::raw_pointer_cast(d_vx.data());
-    dp.vy = thrust::raw_pointer_cast(d_vy.data());
-    dp.vz = thrust::raw_pointer_cast(d_vz.data());
+    DeviceParticles dp = this->get_device_particles();
 
     int threads_per_block = 256;
     int blocks_per_grid = (count + threads_per_block - 1) / threads_per_block;
@@ -130,3 +125,13 @@ void ParticleSystem::step(float dt) {
     // grid to particle (transfer difference in velocity back)
 }
 
+DeviceParticles ParticleSystem::get_device_particles() {
+    DeviceParticles dp;
+    dp.x = thrust::raw_pointer_cast(d_x.data());
+    dp.y = thrust::raw_pointer_cast(d_y.data());
+    dp.z = thrust::raw_pointer_cast(d_z.data());
+    dp.vx = thrust::raw_pointer_cast(d_vx.data());
+    dp.vy = thrust::raw_pointer_cast(d_vy.data());
+    dp.vz = thrust::raw_pointer_cast(d_vz.data());
+    return dp;
+}
