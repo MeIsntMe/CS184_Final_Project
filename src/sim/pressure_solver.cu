@@ -137,7 +137,7 @@ __global__ void enforce_boundary(DeviceMACGrid grid) {
         int iz = idx / (grid.nx * (grid.ny + 1));
         int iy = (idx - iz * grid.nx * (grid.ny + 1)) / grid.nx;
         int ix = idx - iz * grid.nx * (grid.ny + 1) - iy * grid.nx;
-        if (iy == 0 || iy == grid.ny)
+        if (iy == 0)// || iy == grid.ny)
             grid.vel_v[idx] = 0.f;
     }
 

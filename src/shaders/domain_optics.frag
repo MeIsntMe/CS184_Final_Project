@@ -90,7 +90,7 @@ void main() {
     vec3 transmittance = vec3(1.0);
     vec3 scatteredLight = vec3(0.0);
 
-    float surfaceThreshold = 0.5; // Density at which the fluid becomes "solid"
+    float surfaceThreshold = 1.0; // Density at which the fluid becomes "solid"
     vec3 backgroundColor = vec3(1.0); // Pure white environment
     
     bool hitSurface = false;
