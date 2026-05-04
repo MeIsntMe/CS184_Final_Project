@@ -88,5 +88,8 @@ void main() {
         if(length(transmittance)< 0.01) break; // Early exit if opaque
     }
     float alphaTransmittance = (transmittance.r + transmittance.g + transmittance.b) / 3.0;
-    FragColor = vec4(scatteredLight, 1.0 - alphaTransmittance);
+    // ACES filmic tone mapping
+    vec3 tonemapped = clamp((scatteredLight * (2.51 * scatteredLight + 0.03)) /
+                            (scatteredLight * (2.43 * scatteredLight + 0.59) + 0.14), 0.0, 1.0);
+    FragColor = vec4(tonemapped, 1.0 - alphaTransmittance);
 }

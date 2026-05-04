@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse -Force)",
+      "Bash(Select-Object FullName)",
+      "Bash(cmake --build build --config Release)",
+      "Bash(\"build\\\\Release\\\\stream_processor.exe\")"
+    ]
+  }
+}
