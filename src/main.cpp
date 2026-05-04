@@ -142,7 +142,7 @@ int main(int argc, char* argv[]) {
     }
     
     bool benchmark = false;
-    int num_particles = 10000;
+    int num_particles = 100000;
     float benchmark_time;
     std::string log_name;
     std::vector<std::string> args(argv + 1, argv + argc);
@@ -219,8 +219,8 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
 #ifdef __APPLE__
@@ -261,6 +261,13 @@ int main(int argc, char* argv[]) {
         "src/shaders/particles.frag"
     );
 
+    Shader densityComp("src/shaders/density.comp");
+
+    Shader domainShader(
+      "src/shaders/domain.vert",
+      "src/shaders/domain.frag"
+    );
+
     ParticleSystem particleSys;
     particleSys.initialise_particles(num_particles);
 
@@ -277,6 +284,24 @@ int main(int argc, char* argv[]) {
         pos_buffer.push_back(particleSys.h_y[i]);
         pos_buffer.push_back(particleSys.h_z[i]);
     }
+
+    // setting up compute shader
+    GLuint densityTexture;
+    glGenTextures(1, &densityTexture);
+    glBindTexture(GL_TEXTURE_3D, densityTexture);
+
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, grid_res, grid_res, grid_res, 0, GL_RED, GL_FLOAT, nullptr);
+    glBindTexture(GL_TEXTURE_3D, 0);
+
+    // for rendering the domain
+    GLuint emptyVAO;
+    glGenVertexArrays(1, &emptyVAO);
 
     GLuint vao = 0, vbo = 0;
     glGenVertexArrays(1, &vao);
@@ -352,7 +377,42 @@ int main(int argc, char* argv[]) {
         particleShader.setFloat("fogDensity", 0.35f);
 
         glBindVertexArray(vao);
-        glDrawArrays(GL_POINTS, 0, particleSys.count);
+        //glDrawArrays(GL_POINTS, 0, particleSys.count);
+
+
+        float clearColor = 0.0f;
+        glClearTexImage(densityTexture, 0, GL_RED, GL_FLOAT, &clearColor);
+        densityComp.use();
+
+        densityComp.setVec3("domainSize", 2.0f, 2.0f, 2.0f);
+        densityComp.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
+        densityComp.setInt("gridRes", 32);
+        densityComp.setInt("numParticles", num_particles);
+
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vbo);
+        glBindImageTexture(0, densityTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+
+        glDispatchCompute((num_particles + 255) / 256, 1, 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+        domainShader.use();
+
+        domainShader.setVec3("camOffset", g_cam_x, g_cam_y, g_cam_z);
+        domainShader.setFloat("focal", g_focal);
+        domainShader.setFloat("camYaw", g_cam_yaw);
+        domainShader.setFloat("camPitch", g_cam_pitch);
+        domainShader.setVec3("domainSize", 2.0f, 2.0f, 2.0f);
+        domainShader.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
+
+        domainShader.setVec3("lightDir", 0.0, 0.0, 1.0);
+        domainShader.setVec3("lightColor", 1.0, 0.9, 0.8);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_3D, densityTexture);
+        domainShader.setInt("densityTexture", 0);
+
+        glBindVertexArray(emptyVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
 
         glfwSwapBuffers(window);
         glfwPollEvents();

@@ -14,6 +14,9 @@ public:
     // Loads a vertex shader file and a fragment shader file.
     Shader(const std::string& vertexPath, const std::string& fragmentPath);
 
+    // Overloaded constructor for compute shader
+    Shader(const std::string& computePath);
+
     // Deletes the OpenGL shader program.
     ~Shader();
 
@@ -23,6 +26,7 @@ public:
     // Uniform helpers.
     void setFloat(const std::string& name, float value) const;
     void setVec3(const std::string& name, float x, float y, float z) const;
+    void setInt(const std::string& name, int value) const;
 
 private:
     static std::string readFile(const std::string& path);

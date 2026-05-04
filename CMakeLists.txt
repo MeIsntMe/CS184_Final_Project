@@ -22,6 +22,9 @@ set(SRC_FILES
     src/renderer/shader.cpp
     src/shaders/particles.vert
     src/shaders/particles.frag
+    src/shaders/density.comp
+    src/shaders/domain.frag
+    src/shaders/domain.vert
 )
 
 # --- 4. Targets ---
