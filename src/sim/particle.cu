@@ -155,19 +155,19 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
 
     // 2. Particle-to-Grid transfer
     p2g_transfer<<<particle_blocks, tpb>>>(dg, dp, count);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     p2g_normalise<<<face_blocks, tpb>>>(dg);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     // Apply gravity on the grid (body force on v-faces)
     int v_blocks = (v_size + tpb - 1) / tpb;
     add_gravity_to_grid<<<v_blocks, tpb>>>(dg, dt);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     // Enforce wall BCs after gravity, so wall faces stay at zero
     enforce_boundary<<<face_blocks, tpb>>>(dg);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     // 3. Snapshot velocity for FLIP (before pressure solve)
     thrust::copy(grid.d_vel_u.begin(), grid.d_vel_u.end(), grid.d_vel_u_old.begin());
@@ -177,7 +177,7 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
 
     // 4. Pressure solve
     compute_divergence<<<cell_blocks, tpb>>>(dg);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     // Clear pressure before Jacobi iterations
     thrust::fill(grid.d_pressure.begin(), grid.d_pressure.end(), 0.f);
@@ -188,7 +188,7 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     for (int iter = 0; iter < jacobi_iters; iter++) {
         dg = grid.get_device_grid();
         jacobi_iteration<<<cell_blocks, tpb>>>(dg, dt);
-        cudaDeviceSynchronize();
+        //cudaDeviceSynchronize();
         grid.d_pressure.swap(grid.d_pressure_tmp);
     }
     dg = grid.get_device_grid();
@@ -196,19 +196,19 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     // Apply pressure gradient to velocity
     int apply_blocks = (max(u_size, max(v_size, w_size)) + tpb - 1) / tpb;
     apply_pressure<<<apply_blocks, tpb>>>(dg, dt);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     // Enforce wall BCs after pressure projection
     enforce_boundary<<<face_blocks, tpb>>>(dg);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     // 5. Grid-to-Particle transfer
     g2p_transfer<<<particle_blocks, tpb>>>(dg, dp, count);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     // 6. Advect particles with the new velocities
     advect_and_bounce<<<particle_blocks, tpb>>>(count, dt, dp);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     // 7. Sync positions back to CPU for rendering
     thrust::copy(d_x.begin(), d_x.end(), h_x.begin());

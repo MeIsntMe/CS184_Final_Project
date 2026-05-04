@@ -5,7 +5,15 @@
 #include "sim/grid.h"
 
 #include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <string>
 #include <vector>
+#include <ctime>
+#include <cmath>
+#include <sstream>
+#include <charconv>
+
 
 static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     (void)window;
@@ -105,20 +113,117 @@ static GLuint create_shader_program() {
     return program;
 }
 
-static void frame_step(float& prev_time, ParticleSystem &partSys, MACGrid &grid) {
+void save_log(const std::string& folder, const std::string& filename, float num_particles, float total_time, float num_frames) {
+  if (!std::filesystem::exists(folder)) {
+    std::filesystem::create_directories(folder);
+  }
+
+  std::string fullPath = folder + "/" + filename;
+
+  std::ofstream logFile(fullPath);
+  float frame_time = total_time / num_frames;
+  float frame_time_out = std::round(frame_time * 10000) / 10000.0;
+  float fps = std::round(1/frame_time * 100) / 100.0;
+  if (logFile.is_open()) {
+    logFile << "Particle Number: " << num_particles << "\n";
+    logFile << "Time Elapsed: " << total_time << "\t" << "Total Frames: " << num_frames << "\n";
+    logFile << "Average Framerate: " << fps << "\t" << "Average Frame Time (ms): " << frame_time_out << "\n";
+    logFile.close();
+  }
+}
+
+static float frame_step(float& prev_time, ParticleSystem &partSys, MACGrid &grid) {
     float new_time = static_cast<float>(glfwGetTime());
     float dt = new_time - prev_time;
     prev_time = new_time;
 
     partSys.step(dt, grid);
 
-    return;
+    return dt;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
         return -1;
+    }
+    
+    bool benchmark = false;
+    int num_particles = 10000;
+    float benchmark_time;
+    std::string log_name;
+    std::vector<std::string> args(argv + 1, argv + argc);
+
+    for (int i = 0; i < args.size(); i++) {
+      if (args[i] == "-b" || args[i] == "--benchmark") {
+        if (i + 1 < args.size()) {
+          const std::string& val = args[++i];
+          int result;
+          auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), result);
+
+          if (ec == std::errc()) {
+            if (result >= 0) {
+              benchmark_time = result;
+              benchmark = true;
+            }
+            else {
+              std::cerr << "Error: Benchmark time cannot be negative." << std::endl;
+              return 1;
+            }
+          }
+          else if (ec == std::errc::invalid_argument) {
+            std::cerr << "Error: '" << val << "' is not a number!" << std::endl;
+            return 1;
+          }
+          else if (ec == std::errc::result_out_of_range) {
+            std::cerr << "Error: '" << val << "' is too large!" << std::endl;
+            return 1;
+          }
+        }
+        else {
+          std::cerr << "Error: -b requires an argument." << std::endl;
+          return 1;
+        }
+      }
+      else if (args[i] == "-n") {
+        if (i + 1 < args.size()) {
+          const std::string& val = args[++i];
+          int result;
+          auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), result);
+
+          if (ec == std::errc()) {
+            if (result >= 0) {
+              num_particles = result;
+            }
+            else {
+              std::cerr << "Error: Number of particles cannot be negative." << std::endl;
+              return 1;
+            }
+          }
+          else if (ec == std::errc::invalid_argument) {
+            std::cerr << "Error: '" << val << "' is not a number!" << std::endl;
+            return 1;
+          }
+          else if (ec == std::errc::result_out_of_range) {
+            std::cerr << "Error: '" << val << "' is too large!" << std::endl;
+            return 1;
+          }
+        }
+        else {
+          std::cerr << "Error: -n requires an argument." << std::endl;
+          return 1;
+        }
+      }
+      else if (args[i] == "-o" || args[i] == "--output") {
+        // Check if there is a value after the flag
+        if (i + 1 < args.size()) {
+          log_name = args[++i]; // Increment i to skip the value
+        }
+        else {
+          std::cerr << "Error: --output requires a filename." << std::endl;
+          return 1;
+        }
+      }
     }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -155,7 +260,7 @@ int main() {
     GLuint shader_program = create_shader_program();
 
     ParticleSystem particleSys;
-    particleSys.initialise_particles(10000);
+    particleSys.initialise_particles(num_particles);
 
     float domain_size = 2.0f;
     int   grid_res = 32;
@@ -190,10 +295,18 @@ int main() {
 
     float prev_time = static_cast<float>(glfwGetTime());
 
+    float start_time = prev_time;
+    float total_time = 0;
+    int frames = 0;
+
     while (!glfwWindowShouldClose(window)) {
         process_input(window);
 
-        frame_step(prev_time, particleSys, grid);
+        float dt = frame_step(prev_time, particleSys, grid);
+
+        if (benchmark && (prev_time - start_time > benchmark_time)) {
+          glfwSetWindowShouldClose(window, true);
+        }
 
         pos_buffer.clear();
         for (int i = 0; i < particleSys.count; i++) {
@@ -216,7 +329,19 @@ int main() {
 
         glfwSwapBuffers(window);
         glfwPollEvents();
+        frames++;
     }
+    float end_time = glfwGetTime();
+    std::string folder = "logs";
+
+    std::time_t now = std::time(nullptr);
+    std::tm* localTime = std::localtime(&now);
+    std::stringstream ss;
+    ss << std::put_time(localTime, "%Y-%m-%d_%H-%M");
+
+    std::string filename = ss.str() + "_"+log_name+".log";
+
+    save_log(folder, filename, num_particles, end_time - start_time, frames);
 
     glDeleteBuffers(1, &vbo);
     glDeleteVertexArrays(1, &vao);
