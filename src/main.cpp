@@ -43,8 +43,18 @@ static GLuint create_shader_program() {
         #version 330 core
         layout (location = 0) in vec3 aPos;
 
+        vec3 rotY(vec3 p, float a) {
+            float c = cos(a), s = sin(a);
+            return vec3(c*p.x + s*p.z, p.y, -s*p.x + c*p.z);
+        }
+        vec3 rotX(vec3 p, float a) {
+            float c = cos(a), s = sin(a);
+            return vec3(p.x, c*p.y - s*p.z, s*p.y + c*p.z);
+        }
+
         void main() {
-            float z = -aPos.z;
+            vec3 vp = rotX(rotY(aPos, 0.785), 0.35) + vec3(1.2, 0.0, -3.5);
+            float z = -vp.z;
 
             if (z <= 0.01) {
                 gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
@@ -52,8 +62,8 @@ static GLuint create_shader_program() {
                 return;
             }
 
-            float focal = 1.2;
-            vec2 projected = (aPos.xy / z) * focal;
+            float focal = 0.9;
+            vec2 projected = (vp.xy / z) * focal;
 
             gl_Position = vec4(projected, 0.0, 1.0);
             gl_PointSize = 18.0 / z;
@@ -95,13 +105,12 @@ static GLuint create_shader_program() {
     return program;
 }
 
-static void frame_step(float& prev_time, ParticleSystem &partSys) {
+static void frame_step(float& prev_time, ParticleSystem &partSys, MACGrid &grid) {
     float new_time = static_cast<float>(glfwGetTime());
     float dt = new_time - prev_time;
     prev_time = new_time;
 
-    std::cout << dt << "\n";
-    partSys.step(dt);
+    partSys.step(dt, grid);
 
     return;
 }
@@ -146,12 +155,12 @@ int main() {
     GLuint shader_program = create_shader_program();
 
     ParticleSystem particleSys;
-    particleSys.initialise_particles(1000);
+    particleSys.initialise_particles(10000);
 
     float domain_size = 2.0f;
     int   grid_res = 32;
     float dx = domain_size / grid_res;
-    //MACGrid grid(grid_res, grid_res, grid_res, dx);
+    MACGrid grid(grid_res, grid_res, grid_res, dx);
 
     // Build initial position buffer
     std::vector<float> pos_buffer;
@@ -184,37 +193,7 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
         process_input(window);
 
-        frame_step(prev_time, particleSys);
-       
-        //p2g_transfer(grid, particleSys);
-
-
-        //debug block, remove after working
-        float min_x = 999, max_x = -999;
-        float min_y = 999, max_y = -999;
-        for (int i = 0; i < particleSys.count; i++) {
-            min_x = min(min_x, particleSys.h_x[i]);
-            max_x = max(max_x, particleSys.h_x[i]);
-            min_y = min(min_y, particleSys.h_y[i]);
-            max_y = max(max_y, particleSys.h_y[i]);
-        }
-        std::cout << "Particle x range: " << min_x << " to " << max_x << "\n";
-        std::cout << "Particle y range: " << min_y << " to " << max_y << "\n";
-        /*std::cout << "dx = " << grid.dx << "\n";
-        std::cout << "Grid size: " << grid.nx << "x" << grid.ny << "x" << grid.nz << "\n";*/
-
-        //// Check all vel_v not just cell-centred array
-        //int nonzero = 0;
-        //for (int i = 0; i < (int)grid.vel_v.size(); i++)
-        //    if (grid.vel_v[i] != 0.f) nonzero++;
-        //std::cout << "Non-zero vel_v count: " << nonzero << "\n";
-
-        //// Check vel_u too
-        //nonzero = 0;
-        //for (int i = 0; i < (int)grid.vel_u.size(); i++)
-        //    if (grid.vel_u[i] != 0.f) nonzero++;
-        //std::cout << "Non-zero vel_u count: " << nonzero << "\n";
-        ////end of debug block
+        frame_step(prev_time, particleSys, grid);
 
         pos_buffer.clear();
         for (int i = 0; i < particleSys.count; i++) {

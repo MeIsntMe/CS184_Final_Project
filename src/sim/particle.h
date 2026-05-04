@@ -5,6 +5,7 @@
 #include <random>
 #include <vector>
 #include <thrust/device_vector.h>
+#include "grid.h"
 
 
 
@@ -20,7 +21,7 @@ class ParticleSystem{
         ~ParticleSystem();
 
         bool initialise_particles(int count);
-        void step(float dt);
+        void step(float dt, MACGrid& grid);
 
         int count;
 

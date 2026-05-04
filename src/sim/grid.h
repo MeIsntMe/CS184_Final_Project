@@ -17,11 +17,18 @@ struct DeviceMACGrid {
     float* vel_v;
     float* vel_w;
 
+    // Pre-pressure-solve snapshot for FLIP
+    float* vel_u_old;
+    float* vel_v_old;
+    float* vel_w_old;
+
     float* weight_u;
     float* weight_v;
     float* weight_w;
 
     float* pressure;
+    float* pressure_tmp;
+    float* divergence;
     CellType* cell_type;
 
     // device so its callable by GPU
@@ -41,11 +48,18 @@ public:
     thrust::device_vector<float> d_vel_v;
     thrust::device_vector<float> d_vel_w;
 
+    // Pre-pressure-solve snapshot for FLIP
+    thrust::device_vector<float> d_vel_u_old;
+    thrust::device_vector<float> d_vel_v_old;
+    thrust::device_vector<float> d_vel_w_old;
+
     thrust::device_vector<float> d_weight_u;
     thrust::device_vector<float> d_weight_v;
     thrust::device_vector<float> d_weight_w;
 
     thrust::device_vector<float> d_pressure;
+    thrust::device_vector<float> d_pressure_tmp;
+    thrust::device_vector<float> d_divergence;
     thrust::device_vector<CellType> d_cell_type;
 
     MACGrid(int nx, int ny, int nz, float dx);
