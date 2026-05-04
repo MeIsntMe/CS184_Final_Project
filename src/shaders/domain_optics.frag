@@ -171,11 +171,14 @@ void main() {
         }
         
         // Tint the white background based on how much fluid the refracted ray traveled through
-        // (This acts exactly like colored glass)
         vec3 refractionColor = backgroundColor * exp(-opticalDepth * scatteringCoefficients * densityMultiplier);
 
-        // --- 5. FINAL BLEND ---
         vec3 finalColor = mix(refractionColor, reflectionColor, fresnel);
+        //FragColor = vec4(finalColor, 1.0);
+
+        // ACES filmic tone mapping
+        vec3 tonemapped = clamp((finalColor * (2.51 * finalColor + 0.03)) /
+                                (finalColor * (2.43 * finalColor + 0.59) + 0.14), 0.0, 1.0);
         FragColor = vec4(finalColor, 1.0);
         
     } else {

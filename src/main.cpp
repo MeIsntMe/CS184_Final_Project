@@ -419,7 +419,7 @@ int main(int argc, char* argv[]) {
         domainShader.setVec3("domainSize", 2.0f, 2.0f, 2.0f);
         domainShader.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
         domainShader.setFloat("densityMultiplier", densityMultiplier);
-        domainShader.setVec3("scatteringCoefficients", 2.0f, 1.0f, 1.0f);
+        domainShader.setVec3("scatteringCoefficients", 4.0f, 2.8f, 1.5f);
         domainShader.setVec3("lightPos", 0.0f, 1.0f, 0.0f);
         // debugging
         //std::cout << "densityMultiplier = " << densityMultiplier << "\n";
