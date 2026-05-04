@@ -30,7 +30,7 @@ __global__ void add_gravity_to_grid(DeviceMACGrid grid, float dt) {
     bool above_fluid = (iy < grid.ny && grid.cell_type[ix + grid.nx * (iy     + grid.ny * iz)] == FLUID);
 
     if (below_fluid || above_fluid) {
-        grid.vel_v[idx] -= 20.f * dt;
+        grid.vel_v[idx] -= 17.f * dt;
     }
 }
 
@@ -43,12 +43,12 @@ __global__ void advect_and_bounce(int count, float dt, DeviceParticles dp) {
         dp.z[i] += dp.vz[i] * dt;
 
         // Clamp to domain [-1, 1]^3 with velocity reflection
-        if (dp.x[i] < -1.f) { dp.x[i] = -1.f; dp.vx[i] *= -0.5f; }
-        if (dp.x[i] >  1.f) { dp.x[i] =  1.f; dp.vx[i] *= -0.5f; }
-        if (dp.y[i] < -1.f) { dp.y[i] = -1.f; dp.vy[i] *= -0.5f; }
-        if (dp.y[i] >  1.f) { dp.y[i] =  1.f; dp.vy[i] *= -0.5f; }
-        if (dp.z[i] < -1.f) { dp.z[i] = -1.f; dp.vz[i] *= -0.5f; }
-        if (dp.z[i] >  1.f) { dp.z[i] =  1.f; dp.vz[i] *= -0.5f; }
+        if (dp.x[i] < -1.f) { dp.x[i] = -1.f; dp.vx[i] *= -0.65f; }
+        if (dp.x[i] >  1.f) { dp.x[i] =  1.f; dp.vx[i] *= -0.65f; }
+        if (dp.y[i] < -1.f) { dp.y[i] = -1.f; dp.vy[i] *= -0.65f; }
+        if (dp.y[i] >  1.f) { dp.y[i] =  1.f; dp.vy[i] *= -0.65f; }
+        if (dp.z[i] < -1.f) { dp.z[i] = -1.f; dp.vz[i] *= -0.65f; }
+        if (dp.z[i] >  1.f) { dp.z[i] =  1.f; dp.vz[i] *= -0.65f; }
     }
 }
 
@@ -98,15 +98,15 @@ bool ParticleSystem::initialise_particles(int count) {
     std::mt19937 rng(42);
     std::uniform_real_distribution<float> dist(-0.8f, 0.8f);
     std::uniform_real_distribution<float> dist_z(-0.9f, -0.1f);
-    std::uniform_real_distribution<float> dist_vz(-0.5f, 0.5f);
+    std::uniform_real_distribution<float> dist_v(-1.5f, 1.5f);
 
     for (int i = 0; i < count; i++) {
         h_x[i] = dist(rng);
         h_y[i] = dist(rng);
         h_z[i] = dist_z(rng);
-        h_vx[i] = 0.f;
-        h_vy[i] = 0.f;
-        h_vz[i] = dist_vz(rng);
+        h_vx[i] = dist_v(rng);
+        h_vy[i] = dist_v(rng);
+        h_vz[i] = dist_v(rng);
         h_fx[i] = 0.f;
         h_fy[i] = 0.f;
         h_fz[i] = 0.f;
