@@ -7,8 +7,8 @@
 
 Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) {
     // Read shader source code from files.
-    std::string vertexSource = readFile(vertexPath);
-    std::string fragmentSource = readFile(fragmentPath);
+    std::string vertexSource = readFile(std::string(SHADER_DIR)+"/"+vertexPath);
+    std::string fragmentSource = readFile(std::string(SHADER_DIR)+"/"+fragmentPath);
 
     // Compile each shader stage.
     GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource);
@@ -42,7 +42,7 @@ Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) {
 
 Shader::Shader(const std::string& computePath) {
   // Read compute shader source code from file
-  std::string computeSource = readFile(computePath);
+  std::string computeSource = readFile(std::string(SHADER_DIR) + "/" + computePath);
 
   // Compile the compute shader
   // (Ensure your GLAD is generated for OpenGL 4.3+ so GL_COMPUTE_SHADER is defined)

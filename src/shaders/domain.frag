@@ -6,6 +6,9 @@ in vec3 vCamWorldPos;
 uniform vec3 domainCenter;
 uniform vec3 domainSize;
 uniform sampler3D densityTexture;
+uniform vec3 scatteringCoefficients;
+uniform float densityMultiplier;
+uniform vec3 lightPos;
 
 out vec4 FragColor;
 
@@ -19,6 +22,23 @@ vec2 intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 boxMin, vec3 boxMax) {
     float tFar = min(min(t2.x, t2.y), t2.z);
     return vec2(tNear, tFar);
 }
+
+float densityAlongRay(vec3 pos, vec3 dir, float stepSize, vec3 boxMin) {
+    float densityAccum = 0.0;
+    vec3 currentPos = pos;
+    
+    for (int i = 0; i < 100; i++) {
+        vec3 texPos = (currentPos - boxMin) / domainSize;
+        // Stop sampling if the shadow ray exits the 3D texture
+        if(any(lessThan(texPos, vec3(0.0))) || any(greaterThan(texPos, vec3(1.0)))) {
+            break; 
+        }
+        densityAccum += texture(densityTexture, texPos).r * stepSize * densityMultiplier;
+        currentPos += dir * stepSize;
+    }
+    return densityAccum;
+}
+
 
 void main() {
     // 1. Ray direction in perfect, unwarped World Space
@@ -40,18 +60,14 @@ void main() {
     if(tNear >= tFar) {
         discard; 
     }
-    
-    // 3. Setup World-Space Marching
+  
     vec3 currentWorldPos = vCamWorldPos + rayDir * tNear;
     
-    // Since we are marching in World Space now, your step size depends on your domain size. 
-    // If domainSize is 10.0, a step of 0.05 gives you 200 high-quality samples.
-    float stepSize = 0.05; 
+    float stepSize = 0.01; 
     
-    float transmittance = 1.0;
+    vec3 transmittance = vec3(1.0);
     vec3 scatteredLight = vec3(0.0);
-    
-    // 4. The March
+
     for(int i = 0; i < 300; i++) {
         // Stop if we exit the back of the box
         if(tNear > tFar) break;
@@ -59,20 +75,18 @@ void main() {
         // Convert the current world position to 0..1 Texture Space to read the density
         vec3 texPos = (currentWorldPos - boxMin) / domainSize;
         float density = texture(densityTexture, texPos).r;
-        
-        if(density > 0.01) {
-            // ... (Your lighting math, absorption, and accumulation here) ...
-            
-            transmittance *= exp(-density * stepSize); // Example accumulation
-            scatteredLight += density * transmittance * stepSize; 
-        }
-        
+
+        float densityAlongSunRay = densityAlongRay(currentWorldPos, normalize(lightPos), stepSize*10, boxMin);
+        vec3 transmittedSunlight = exp(-densityAlongSunRay*scatteringCoefficients);
+        transmittance *= exp(-density * stepSize * densityMultiplier * scatteringCoefficients); // Example accumulation
+        scatteredLight += transmittedSunlight * density * stepSize * transmittance * scatteringCoefficients; 
+
         // Step forward in World Space
         currentWorldPos += rayDir * stepSize;
         tNear += stepSize;
         
-        if(transmittance < 0.01) break; // Early exit if opaque
+        if(length(transmittance)< 0.01) break; // Early exit if opaque
     }
-    
-    FragColor = vec4(scatteredLight, 1.0 - transmittance);
+    float alphaTransmittance = (transmittance.r + transmittance.g + transmittance.b) / 3.0;
+    FragColor = vec4(scatteredLight, 1.0 - alphaTransmittance);
 }

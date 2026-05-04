@@ -33,6 +33,9 @@ static double g_last_mouse_y = 0.0;
 static bool g_paused            = false;
 static bool g_restart_requested = false;
 
+// Raymarching variables
+static float densityMultiplier = 1.0;
+
 static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     (void)window;
     glViewport(0, 0, width, height);
@@ -79,7 +82,8 @@ static void process_input(GLFWwindow* window, float dt) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
     }
-
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) densityMultiplier += 0.05;
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) densityMultiplier -= 0.05;
     const float speed = 2.0f;
     // W/S move forward/backward along the camera's look axis.
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) g_cam_z += speed * dt;
@@ -403,8 +407,13 @@ int main(int argc, char* argv[]) {
         domainShader.setFloat("camPitch", g_cam_pitch);
         domainShader.setVec3("domainSize", 2.0f, 2.0f, 2.0f);
         domainShader.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
+        domainShader.setFloat("densityMultiplier", densityMultiplier);
+        domainShader.setVec3("scatteringCoefficients", 5.0f, 1.0f, 1.0f);
+        domainShader.setVec3("lightPos", 0.0f, 1.0f, 0.0f);
+        // debugging
+        //std::cout << "densityMultiplier = " << densityMultiplier << "\n";
 
-        domainShader.setVec3("lightDir", 0.0, 0.0, 1.0);
+        domainShader.setVec3("lightDir", 0.0, 1.0, 0.0);
         domainShader.setVec3("lightColor", 1.0, 0.9, 0.8);
 
         glActiveTexture(GL_TEXTURE0);

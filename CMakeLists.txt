@@ -55,8 +55,7 @@ if(MSVC)
     )
 endif()
 
-# Copy shaders to the build directory so the .exe can find them
-add_custom_command(TARGET stream_processor POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders"
-        "$<TARGET_FILE_DIR:stream_processor>/src/shaders")
+# This passes the absolute path of your source shaders folder directly into your C++ code
+target_compile_definitions(stream_processor PRIVATE 
+    SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
