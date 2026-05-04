@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
     }
     
     bool benchmark = false;
-    int num_particles = 100000;
+    int num_particles = 1000000;
     float benchmark_time;
     std::string log_name;
     std::vector<std::string> args(argv + 1, argv + argc);
@@ -272,6 +272,11 @@ int main(int argc, char* argv[]) {
       "src/shaders/domain.frag"
     );
 
+    Shader glassShader(
+      "src/shaders/glass.vert",
+      "src/shaders/glass.frag"
+    );
+
     ParticleSystem particleSys;
     particleSys.initialise_particles(num_particles);
 
@@ -359,7 +364,7 @@ int main(int argc, char* argv[]) {
             pos_buffer.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        glClearColor(0.45f, 0.55f, 0.70f, 1.0f);
+        glClearColor(0.03f, 0.03f, 0.05f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         particleShader.use();
@@ -390,7 +395,7 @@ int main(int argc, char* argv[]) {
 
         densityComp.setVec3("domainSize", 2.0f, 2.0f, 2.0f);
         densityComp.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
-        densityComp.setInt("gridRes", 32);
+        densityComp.setInt("gridRes", grid_res);
         densityComp.setInt("numParticles", num_particles);
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vbo);
@@ -422,6 +427,21 @@ int main(int argc, char* argv[]) {
 
         glBindVertexArray(emptyVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Glass walls pass — render after fluid so blending is correct
+        glDepthMask(GL_FALSE);
+        glassShader.use();
+        glassShader.setVec3("camOffset",    g_cam_x, g_cam_y, g_cam_z);
+        glassShader.setFloat("focal",       g_focal);
+        glassShader.setFloat("camYaw",      g_cam_yaw);
+        glassShader.setFloat("camPitch",    g_cam_pitch);
+        glassShader.setVec3("domainSize",   2.0f, 2.0f, 2.0f);
+        glassShader.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
+        glassShader.setVec3("lightDir",     0.0f, 1.0f, 0.0f);
+        glassShader.setVec3("glassColor",   0.5f, 0.75f, 0.95f);
+        glBindVertexArray(emptyVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        glDepthMask(GL_TRUE);
 
         glfwSwapBuffers(window);
         glfwPollEvents();

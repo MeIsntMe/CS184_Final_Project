@@ -38,8 +38,6 @@ __global__ void add_gravity_to_grid(DeviceMACGrid grid, float dt) {
 __global__ void advect_and_bounce(int count, float dt, DeviceParticles dp) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < count) {
-        dp.vy[i] -= 5.f * dt;  // gravity applied to all particles unconditionally
-
         dp.x[i] += dp.vx[i] * dt;
         dp.y[i] += dp.vy[i] * dt;
         dp.z[i] += dp.vz[i] * dt;
@@ -162,17 +160,19 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     p2g_normalise<<<face_blocks, tpb>>>(dg);
     //cudaDeviceSynchronize();
 
-    // Gravity is applied directly to particles in advect_and_bounce instead
-
-    // Enforce wall BCs after gravity, so wall faces stay at zero
-    enforce_boundary<<<face_blocks, tpb>>>(dg);
-    //cudaDeviceSynchronize();
-
-    // 3. Snapshot velocity for FLIP (before pressure solve)
+    // 3. Snapshot velocity for FLIP before gravity+pressure so delta carries both
     thrust::copy(grid.d_vel_u.begin(), grid.d_vel_u.end(), grid.d_vel_u_old.begin());
     thrust::copy(grid.d_vel_v.begin(), grid.d_vel_v.end(), grid.d_vel_v_old.begin());
     thrust::copy(grid.d_vel_w.begin(), grid.d_vel_w.end(), grid.d_vel_w_old.begin());
     dg = grid.get_device_grid();
+
+    // 4. Apply gravity to grid so pressure solve must balance it (hydrostatic support)
+    add_gravity_to_grid<<<face_blocks, tpb>>>(dg, dt);
+    //cudaDeviceSynchronize();
+
+    // Enforce wall BCs after gravity
+    enforce_boundary<<<face_blocks, tpb>>>(dg);
+    //cudaDeviceSynchronize();
 
     // 4. Pressure solve
     compute_divergence<<<cell_blocks, tpb>>>(dg);
@@ -183,7 +183,7 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     thrust::fill(grid.d_pressure_tmp.begin(), grid.d_pressure_tmp.end(), 0.f);
 
     // Jacobi iterations with ping-pong swap
-    const int jacobi_iters = 100;
+    const int jacobi_iters = 300;
     for (int iter = 0; iter < jacobi_iters; iter++) {
         dg = grid.get_device_grid();
         jacobi_iteration<<<cell_blocks, tpb>>>(dg, dt);
