@@ -34,7 +34,7 @@ static bool g_paused            = false;
 static bool g_restart_requested = false;
 
 // Raymarching variables
-static float densityMultiplier = 1.0;
+static float densityMultiplier = 0.09;
 
 static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     (void)window;
