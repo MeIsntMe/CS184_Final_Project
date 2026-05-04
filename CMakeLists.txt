@@ -18,6 +18,7 @@ set(SRC_FILES
     src/sim/grid.cpp
     src/sim/particle.h
     src/sim/p2g.cuh
+    src/renderer/shader.cpp
 )
 
 # --- 4. Targets ---

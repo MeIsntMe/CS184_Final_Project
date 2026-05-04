@@ -3,6 +3,7 @@
 
 #include "sim/particle.h"
 #include "sim/grid.h"
+#include "renderer/shader.h"
 
 #include <iostream>
 #include <vector>
@@ -16,83 +17,6 @@ static void process_input(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
     }
-}
-
-static GLuint compile_shader(GLenum type, const char* source) {
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
-    glCompileShader(shader);
-
-    GLint success = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        GLint log_length = 0;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
-
-        std::vector<char> log(log_length);
-        glGetShaderInfoLog(shader, log_length, nullptr, log.data());
-
-        std::cerr << "Shader compilation failed:\n" << log.data() << "\n";
-    }
-
-    return shader;
-}
-
-static GLuint create_shader_program() {
-    const char* vertex_shader_source = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-
-        void main() {
-            float z = -aPos.z;
-
-            if (z <= 0.01) {
-                gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-                gl_PointSize = 1.0;
-                return;
-            }
-
-            float focal = 1.2;
-            vec2 projected = (aPos.xy / z) * focal;
-
-            gl_Position = vec4(projected, 0.0, 1.0);
-            gl_PointSize = 18.0 / z;
-        }
-    )";
-
-    const char* fragment_shader_source = R"(
-        #version 330 core
-        out vec4 FragColor;
-
-        void main() {
-            FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-        }
-    )";
-
-    GLuint vertex_shader = compile_shader(GL_VERTEX_SHADER, vertex_shader_source);
-    GLuint fragment_shader = compile_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
-
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vertex_shader);
-    glAttachShader(program, fragment_shader);
-    glLinkProgram(program);
-
-    GLint success = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success) {
-        GLint log_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_length);
-
-        std::vector<char> log(log_length);
-        glGetProgramInfoLog(program, log_length, nullptr, log.data());
-
-        std::cerr << "Program linking failed:\n" << log.data() << "\n";
-    }
-
-    glDeleteShader(vertex_shader);
-    glDeleteShader(fragment_shader);
-
-    return program;
 }
 
 static void frame_step(float& prev_time, ParticleSystem &partSys) {
@@ -139,11 +63,17 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     std::cout << "OpenGL Vendor:   " << glGetString(GL_VENDOR) << "\n";
     std::cout << "OpenGL Renderer: " << glGetString(GL_RENDERER) << "\n";
     std::cout << "OpenGL Version:  " << glGetString(GL_VERSION) << "\n";
 
-    GLuint shader_program = create_shader_program();
+    Shader particleShader(
+        "src/shaders/particles.vert",
+        "src/shaders/particles.frag"
+    );
 
     ParticleSystem particleSys;
     particleSys.initialise_particles(1000);
@@ -228,10 +158,22 @@ int main() {
             pos_buffer.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
+        glClearColor(0.45f, 0.55f, 0.70f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shader_program);
+        particleShader.use();
+
+        // Normal color of the particles.
+        particleShader.setVec3("particleColor", 1.0f, 1.0f, 1.0f);
+
+        // Fog color.
+        particleShader.setVec3("fogColor", 0.45f, 0.55f, 0.70f);
+
+        // Fog strength.
+        // Lower = clearer.
+        // Higher = foggier.
+        particleShader.setFloat("fogDensity", 0.35f);
+
         glBindVertexArray(vao);
         glDrawArrays(GL_POINTS, 0, particleSys.count);
 
@@ -240,8 +182,7 @@ int main() {
     }
 
     glDeleteBuffers(1, &vbo);
-    glDeleteVertexArrays(1, &vao);
-    glDeleteProgram(shader_program);
+    glDeleteVertexArrays(1, &vao);    
 
     glfwDestroyWindow(window);
     glfwTerminate();
