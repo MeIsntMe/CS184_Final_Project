@@ -16,15 +16,91 @@
 #include <charconv>
 
 
+// Camera state – must be global so GLFW callbacks can reach them.
+static float g_cam_x    = 1.2f;
+static float g_cam_y    = 0.0f;
+static float g_cam_z    = -3.5f;
+static float g_focal    = 4.0f;
+static float g_cam_yaw  = 0.785f;
+static float g_cam_pitch = 0.35f;
+
+// Drag state.
+static bool   g_dragging     = false;
+static double g_last_mouse_x = 0.0;
+static double g_last_mouse_y = 0.0;
+
+// Simulation control.
+static bool g_paused            = false;
+static bool g_restart_requested = false;
+
 static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     (void)window;
     glViewport(0, 0, width, height);
 }
 
-static void process_input(GLFWwindow* window) {
+static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    (void)mods;
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) {
+            g_dragging = true;
+            glfwGetCursorPos(window, &g_last_mouse_x, &g_last_mouse_y);
+        } else {
+            g_dragging = false;
+        }
+    }
+}
+
+static void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos) {
+    (void)window;
+    if (!g_dragging) return;
+    double dx = xpos - g_last_mouse_x;
+    double dy = ypos - g_last_mouse_y;
+    g_last_mouse_x = xpos;
+    g_last_mouse_y = ypos;
+
+    const float sensitivity = 0.005f;
+    g_cam_yaw   += (float)dx * sensitivity;
+    g_cam_pitch += (float)dy * sensitivity;
+
+    // Prevent flipping past straight up/down.
+    if (g_cam_pitch < -1.52f) g_cam_pitch = -1.52f;
+    if (g_cam_pitch >  1.52f) g_cam_pitch =  1.52f;
+}
+
+static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    (void)window; (void)xoffset;
+    g_focal += (float)yoffset * 0.3f;
+    if (g_focal < 0.5f)  g_focal = 0.5f;
+    if (g_focal > 20.0f) g_focal = 20.0f;
+}
+
+// dt: time since last frame, used for frame-rate-independent movement.
+static void process_input(GLFWwindow* window, float dt) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
     }
+
+    const float speed = 2.0f;
+    // W/S move forward/backward along the camera's look axis.
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) g_cam_z += speed * dt;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) g_cam_z -= speed * dt;
+    // A/D strafe left/right.
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) g_cam_x += speed * dt;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) g_cam_x -= speed * dt;
+    // Space/Shift move up/down in world.
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) g_cam_y -= speed * dt;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)  == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) g_cam_y += speed * dt;
+
+    // P toggles pause; R requests a restart. Both fire once per press.
+    static bool p_was_pressed = false;
+    static bool r_was_pressed = false;
+    bool p_now = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
+    bool r_now = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
+    if (p_now && !p_was_pressed) g_paused = !g_paused;
+    if (r_now && !r_was_pressed) g_restart_requested = true;
+    p_was_pressed = p_now;
+    r_was_pressed = r_now;
 }
 
 
@@ -48,12 +124,13 @@ void save_log(const std::string& folder, const std::string& filename, float num_
   }
 }
 
-static float frame_step(float& prev_time, ParticleSystem &partSys, MACGrid &grid) {
+static float frame_step(float& prev_time, ParticleSystem &partSys, MACGrid &grid, bool paused) {
     float new_time = static_cast<float>(glfwGetTime());
     float dt = new_time - prev_time;
     prev_time = new_time;
 
-    partSys.step(dt, grid);
+    if (!paused)
+        partSys.step(dt, grid);
 
     return dt;
 }
@@ -159,6 +236,9 @@ int main(int argc, char* argv[]) {
 
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetCursorPosCallback(window, cursor_pos_callback);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cerr << "Failed to initialize GLAD\n";
@@ -220,11 +300,19 @@ int main(int argc, char* argv[]) {
     float start_time = prev_time;
     float total_time = 0;
     int frames = 0;
+    float prev_dt = 1.0f / 60.0f;
 
     while (!glfwWindowShouldClose(window)) {
-        process_input(window);
+        process_input(window, prev_dt);
 
-        float dt = frame_step(prev_time, particleSys, grid);
+        if (g_restart_requested) {
+            particleSys.initialise_particles(num_particles);
+            g_restart_requested = false;
+            g_paused = false;
+        }
+
+        float dt = frame_step(prev_time, particleSys, grid, g_paused);
+        prev_dt = dt;
 
         if (benchmark && (prev_time - start_time > benchmark_time)) {
           glfwSetWindowShouldClose(window, true);
@@ -246,6 +334,11 @@ int main(int argc, char* argv[]) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         particleShader.use();
+
+        particleShader.setVec3("camOffset", g_cam_x, g_cam_y, g_cam_z);
+        particleShader.setFloat("focal", g_focal);
+        particleShader.setFloat("camYaw", g_cam_yaw);
+        particleShader.setFloat("camPitch", g_cam_pitch);
 
         // Normal color of the particles.
         particleShader.setVec3("particleColor", 1.0f, 1.0f, 1.0f);
