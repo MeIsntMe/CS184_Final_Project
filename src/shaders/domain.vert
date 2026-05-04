@@ -8,8 +8,18 @@ const vec3 corners[8] = vec3[8](
 );
 
 const int indices[36] = int[36](
-    0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 3, 2, 6, 6, 7, 3,
-    0, 1, 5, 5, 4, 0, 0, 3, 7, 7, 4, 0, 1, 2, 6, 6, 5, 1
+    // Front face (-Z)
+    0, 3, 2, 2, 1, 0, 
+    // Back face (+Z)
+    4, 5, 6, 6, 7, 4, 
+    // Top face (+Y)
+    3, 7, 6, 6, 2, 3, 
+    // Bottom face (-Y)
+    0, 1, 5, 5, 4, 0, 
+    // Right face (+X)
+    1, 2, 6, 6, 5, 1, 
+    // Left face (-X)
+    0, 4, 7, 7, 3, 0  
 );
 
 uniform vec3  camOffset;
