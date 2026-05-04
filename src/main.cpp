@@ -397,7 +397,7 @@ int main(int argc, char* argv[]) {
         densityComp.setInt("numParticles", num_particles);
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vbo);
-        glBindImageTexture(0, densityTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+        glBindImageTexture(0, densityTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F);
 
         glDispatchCompute((num_particles + 255) / 256, 1, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);

@@ -38,6 +38,8 @@ __global__ void add_gravity_to_grid(DeviceMACGrid grid, float dt) {
 __global__ void advect_and_bounce(int count, float dt, DeviceParticles dp) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < count) {
+        dp.vy[i] -= 5.f * dt;  // gravity applied to all particles unconditionally
+
         dp.x[i] += dp.vx[i] * dt;
         dp.y[i] += dp.vy[i] * dt;
         dp.z[i] += dp.vz[i] * dt;
@@ -160,10 +162,7 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     p2g_normalise<<<face_blocks, tpb>>>(dg);
     //cudaDeviceSynchronize();
 
-    // Apply gravity on the grid (body force on v-faces)
-    int v_blocks = (v_size + tpb - 1) / tpb;
-    add_gravity_to_grid<<<v_blocks, tpb>>>(dg, dt);
-    //cudaDeviceSynchronize();
+    // Gravity is applied directly to particles in advect_and_bounce instead
 
     // Enforce wall BCs after gravity, so wall faces stay at zero
     enforce_boundary<<<face_blocks, tpb>>>(dg);

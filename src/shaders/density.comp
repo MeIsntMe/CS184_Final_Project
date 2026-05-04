@@ -32,8 +32,19 @@ void main() {
 
     ivec3 voxelCoord = ivec3(gridPos);
 
-    if (all(greaterThanEqual(voxelCoord, ivec3(0))) && all(lessThan(voxelCoord, ivec3(gridRes)))) {
-        float densityContribution = 0.1;
-        imageAtomicAdd(densityVolume, voxelCoord, densityContribution);
+    // Gaussian splat: spread particle density over a 3x3x3 neighborhood.
+    // Total weight normalizer = sum of exp(-0.5*r²) over 3x3x3 = ~10.839
+    const float baseContrib = 0.1 / 10.839;
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                ivec3 coord = voxelCoord + ivec3(dx, dy, dz);
+                if (all(greaterThanEqual(coord, ivec3(0))) && all(lessThan(coord, ivec3(gridRes)))) {
+                    float dist2 = float(dx*dx + dy*dy + dz*dz);
+                    float w = exp(-0.5 * dist2);
+                    imageAtomicAdd(densityVolume, coord, baseContrib * w);
+                }
+            }
+        }
     }
 }
