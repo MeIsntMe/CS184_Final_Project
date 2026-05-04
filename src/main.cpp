@@ -3,6 +3,7 @@
 
 #include "sim/particle.h"
 #include "sim/grid.h"
+#include "renderer/shader.h"
 
 #include <iostream>
 #include <fstream>
@@ -26,92 +27,7 @@ static void process_input(GLFWwindow* window) {
     }
 }
 
-static GLuint compile_shader(GLenum type, const char* source) {
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
-    glCompileShader(shader);
 
-    GLint success = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        GLint log_length = 0;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
-
-        std::vector<char> log(log_length);
-        glGetShaderInfoLog(shader, log_length, nullptr, log.data());
-
-        std::cerr << "Shader compilation failed:\n" << log.data() << "\n";
-    }
-
-    return shader;
-}
-
-static GLuint create_shader_program() {
-    const char* vertex_shader_source = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-
-        vec3 rotY(vec3 p, float a) {
-            float c = cos(a), s = sin(a);
-            return vec3(c*p.x + s*p.z, p.y, -s*p.x + c*p.z);
-        }
-        vec3 rotX(vec3 p, float a) {
-            float c = cos(a), s = sin(a);
-            return vec3(p.x, c*p.y - s*p.z, s*p.y + c*p.z);
-        }
-
-        void main() {
-            vec3 vp = rotX(rotY(aPos, 0.785), 0.35) + vec3(1.2, 0.0, -3.5);
-            float z = -vp.z;
-
-            if (z <= 0.01) {
-                gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-                gl_PointSize = 1.0;
-                return;
-            }
-
-            float focal = 0.9;
-            vec2 projected = (vp.xy / z) * focal;
-
-            gl_Position = vec4(projected, 0.0, 1.0);
-            gl_PointSize = 18.0 / z;
-        }
-    )";
-
-    const char* fragment_shader_source = R"(
-        #version 330 core
-        out vec4 FragColor;
-
-        void main() {
-            FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-        }
-    )";
-
-    GLuint vertex_shader = compile_shader(GL_VERTEX_SHADER, vertex_shader_source);
-    GLuint fragment_shader = compile_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
-
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vertex_shader);
-    glAttachShader(program, fragment_shader);
-    glLinkProgram(program);
-
-    GLint success = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success) {
-        GLint log_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_length);
-
-        std::vector<char> log(log_length);
-        glGetProgramInfoLog(program, log_length, nullptr, log.data());
-
-        std::cerr << "Program linking failed:\n" << log.data() << "\n";
-    }
-
-    glDeleteShader(vertex_shader);
-    glDeleteShader(fragment_shader);
-
-    return program;
-}
 
 void save_log(const std::string& folder, const std::string& filename, float num_particles, float total_time, float num_frames) {
   if (!std::filesystem::exists(folder)) {
@@ -253,11 +169,17 @@ int main(int argc, char* argv[]) {
 
     glEnable(GL_DEPTH_TEST);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     std::cout << "OpenGL Vendor:   " << glGetString(GL_VENDOR) << "\n";
     std::cout << "OpenGL Renderer: " << glGetString(GL_RENDERER) << "\n";
     std::cout << "OpenGL Version:  " << glGetString(GL_VERSION) << "\n";
 
-    GLuint shader_program = create_shader_program();
+    Shader particleShader(
+        "src/shaders/particles.vert",
+        "src/shaders/particles.frag"
+    );
 
     ParticleSystem particleSys;
     particleSys.initialise_particles(num_particles);
@@ -320,10 +242,22 @@ int main(int argc, char* argv[]) {
             pos_buffer.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
+        glClearColor(0.45f, 0.55f, 0.70f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shader_program);
+        particleShader.use();
+
+        // Normal color of the particles.
+        particleShader.setVec3("particleColor", 1.0f, 1.0f, 1.0f);
+
+        // Fog color.
+        particleShader.setVec3("fogColor", 0.45f, 0.55f, 0.70f);
+
+        // Fog strength.
+        // Lower = clearer.
+        // Higher = foggier.
+        particleShader.setFloat("fogDensity", 0.35f);
+
         glBindVertexArray(vao);
         glDrawArrays(GL_POINTS, 0, particleSys.count);
 
@@ -344,8 +278,7 @@ int main(int argc, char* argv[]) {
     save_log(folder, filename, num_particles, end_time - start_time, frames);
 
     glDeleteBuffers(1, &vbo);
-    glDeleteVertexArrays(1, &vao);
-    glDeleteProgram(shader_program);
+    glDeleteVertexArrays(1, &vao);    
 
     glfwDestroyWindow(window);
     glfwTerminate();

@@ -19,6 +19,9 @@ set(SRC_FILES
     src/sim/pressure_solver.cu
     src/sim/particle.h
     src/sim/p2g.cuh
+    src/renderer/shader.cpp
+    src/shaders/particles.vert
+    src/shaders/particles.frag
 )
 
 # --- 4. Targets ---
@@ -48,3 +51,9 @@ if(MSVC)
         $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>
     )
 endif()
+
+# Copy shaders to the build directory so the .exe can find them
+add_custom_command(TARGET stream_processor POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/shaders"
+        "$<TARGET_FILE_DIR:stream_processor>/src/shaders")
