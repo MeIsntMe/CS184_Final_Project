@@ -269,7 +269,7 @@ int main(int argc, char* argv[]) {
 
     Shader domainShader(
       "src/shaders/domain.vert",
-      "src/shaders/domain.frag"
+      "src/shaders/domain_optics.frag"
     );
 
     ParticleSystem particleSys;
@@ -296,12 +296,15 @@ int main(int argc, char* argv[]) {
 
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_BORDER);
 
     glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, grid_res, grid_res, grid_res, 0, GL_RED, GL_FLOAT, nullptr);
     glBindTexture(GL_TEXTURE_3D, 0);
+
+    float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    glTexParameterfv(GL_TEXTURE_3D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
     // for rendering the domain
     GLuint emptyVAO;
@@ -401,6 +404,14 @@ int main(int argc, char* argv[]) {
 
         domainShader.use();
 
+        
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glFrontFace(GL_CCW);
+
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         domainShader.setVec3("camOffset", g_cam_x, g_cam_y, g_cam_z);
         domainShader.setFloat("focal", g_focal);
         domainShader.setFloat("camYaw", g_cam_yaw);
@@ -408,7 +419,7 @@ int main(int argc, char* argv[]) {
         domainShader.setVec3("domainSize", 2.0f, 2.0f, 2.0f);
         domainShader.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
         domainShader.setFloat("densityMultiplier", densityMultiplier);
-        domainShader.setVec3("scatteringCoefficients", 5.0f, 1.0f, 1.0f);
+        domainShader.setVec3("scatteringCoefficients", 2.0f, 1.0f, 1.0f);
         domainShader.setVec3("lightPos", 0.0f, 1.0f, 0.0f);
         // debugging
         //std::cout << "densityMultiplier = " << densityMultiplier << "\n";
@@ -422,6 +433,8 @@ int main(int argc, char* argv[]) {
 
         glBindVertexArray(emptyVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        
 
         glfwSwapBuffers(window);
         glfwPollEvents();
