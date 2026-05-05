@@ -44,6 +44,30 @@ __device__ inline void jacobi_sample(const DeviceMACGrid& grid,
     count++;
 }
 
+__device__ float sdf_sphere(float x, float y, float z, float cx, float cy, float cz, float r) {
+  float dx = x - cx; float dy = y - cy; float dz = z - cz;
+  return sqrtf(dx * dx + dy * dy + dz * dz) - r;
+}
+
+__global__ void mark_solids(DeviceMACGrid grid, float cx, float cy, float cz, float r) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int total = grid.nx * grid.ny * grid.nz;
+  if (idx >= total) return;
+
+  int iz = idx / (grid.nx * grid.ny);
+  int iy = (idx - iz * grid.nx * grid.ny) / grid.nx;
+  int ix = idx - iz * grid.nx * grid.ny - iy * grid.nx;
+
+  // Convert grid indices to world space cell centers (Domain: -1 to 1)
+  float x = -1.f + (ix + 0.5f) * grid.dx;
+  float y = -1.f + (iy + 0.5f) * grid.dx;
+  float z = -1.f + (iz + 0.5f) * grid.dx;
+
+  if (sdf_sphere(x, y, z, cx, cy, cz, r) <= 0.f) {
+    grid.cell_type[idx] = SOLID;
+  }
+}
+
 __global__ void jacobi_iteration(DeviceMACGrid grid, float dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = grid.nx * grid.ny * grid.nz;
@@ -87,7 +111,7 @@ __global__ void apply_pressure(DeviceMACGrid grid, float dt) {
         if (ix > 0 && ix < grid.nx) {
             int l = (ix-1) + grid.nx * (iy + grid.ny * iz);
             int r =  ix    + grid.nx * (iy + grid.ny * iz);
-            if (grid.cell_type[l] == FLUID || grid.cell_type[r] == FLUID)
+            if (grid.cell_type[l] != SOLID && grid.cell_type[r] != SOLID)
                 grid.vel_u[idx] -= dt * (grid.pressure[r] - grid.pressure[l]) / grid.dx;
         }
     }
@@ -99,7 +123,7 @@ __global__ void apply_pressure(DeviceMACGrid grid, float dt) {
         if (iy > 0 && iy < grid.ny) {
             int b = ix + grid.nx * ((iy-1) + grid.ny * iz);
             int t = ix + grid.nx * ( iy    + grid.ny * iz);
-            if (grid.cell_type[b] == FLUID || grid.cell_type[t] == FLUID)
+            if (grid.cell_type[b] != SOLID && grid.cell_type[t] != SOLID)
                 grid.vel_v[idx] -= dt * (grid.pressure[t] - grid.pressure[b]) / grid.dx;
         }
     }
@@ -111,43 +135,78 @@ __global__ void apply_pressure(DeviceMACGrid grid, float dt) {
         if (iz > 0 && iz < grid.nz) {
             int bk = ix + grid.nx * (iy + grid.ny * (iz-1));
             int fr = ix + grid.nx * (iy + grid.ny *  iz);
-            if (grid.cell_type[bk] == FLUID || grid.cell_type[fr] == FLUID)
+            if (grid.cell_type[bk] != SOLID && grid.cell_type[fr] != SOLID)
                 grid.vel_w[idx] -= dt * (grid.pressure[fr] - grid.pressure[bk]) / grid.dx;
         }
     }
 }
 
 // Enforce solid wall BCs: zero normal velocity on all domain boundary faces
+// and fluid-solid interfaces. Tangential velocities inside solids are preserved
+// to allow for natural free-slip behavior from P2G splatting.
 __global__ void enforce_boundary(DeviceMACGrid grid) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // U-faces: faces at ix=0 and ix=nx are the left/right walls
-    int u_size = (grid.nx + 1) * grid.ny * grid.nz;
-    if (idx < u_size) {
-        int iz = idx / ((grid.nx + 1) * grid.ny);
-        int iy = (idx - iz * (grid.nx + 1) * grid.ny) / (grid.nx + 1);
-        int ix = idx - iz * (grid.nx + 1) * grid.ny - iy * (grid.nx + 1);
-        if (ix == 0 || ix == grid.nx)
-            grid.vel_u[idx] = 0.f;
+  // U-faces
+  int u_size = (grid.nx + 1) * grid.ny * grid.nz;
+  if (idx < u_size) {
+    int iz = idx / ((grid.nx + 1) * grid.ny);
+    int iy = (idx - iz * (grid.nx + 1) * grid.ny) / (grid.nx + 1);
+    int ix = idx - iz * (grid.nx + 1) * grid.ny - iy * (grid.nx + 1);
+
+    bool is_boundary_normal = false;
+    if (ix > 0 && ix < grid.nx) {
+      int l = (ix - 1) + grid.nx * (iy + grid.ny * iz);
+      int r = ix + grid.nx * (iy + grid.ny * iz);
+      // ONLY zero if it is the precise fluid-solid interface boundary
+      if ((grid.cell_type[l] == SOLID && grid.cell_type[r] != SOLID) ||
+        (grid.cell_type[l] != SOLID && grid.cell_type[r] == SOLID)) {
+        is_boundary_normal = true;
+      }
     }
 
-    // V-faces: faces at iy=0 and iy=ny are the bottom/top walls
-    int v_size = grid.nx * (grid.ny + 1) * grid.nz;
-    if (idx < v_size) {
-        int iz = idx / (grid.nx * (grid.ny + 1));
-        int iy = (idx - iz * grid.nx * (grid.ny + 1)) / grid.nx;
-        int ix = idx - iz * grid.nx * (grid.ny + 1) - iy * grid.nx;
-        if (iy == 0)// || iy == grid.ny)
-            grid.vel_v[idx] = 0.f;
+    if (ix == 0 || ix == grid.nx || is_boundary_normal) grid.vel_u[idx] = 0.f;
+  }
+
+  // V-faces
+  int v_size = grid.nx * (grid.ny + 1) * grid.nz;
+  if (idx < v_size) {
+    int iz = idx / (grid.nx * (grid.ny + 1));
+    int iy = (idx - iz * grid.nx * (grid.ny + 1)) / grid.nx;
+    int ix = idx - iz * grid.nx * (grid.ny + 1) - iy * grid.nx;
+
+    bool is_boundary_normal = false;
+    if (iy > 0 && iy < grid.ny) {
+      int b = ix + grid.nx * ((iy - 1) + grid.ny * iz);
+      int t = ix + grid.nx * (iy + grid.ny * iz);
+      // ONLY zero if it is the precise fluid-solid interface boundary
+      if ((grid.cell_type[b] == SOLID && grid.cell_type[t] != SOLID) ||
+        (grid.cell_type[b] != SOLID && grid.cell_type[t] == SOLID)) {
+        is_boundary_normal = true;
+      }
     }
 
-    // W-faces: faces at iz=0 and iz=nz are the back/front walls
-    int w_size = grid.nx * grid.ny * (grid.nz + 1);
-    if (idx < w_size) {
-        int iz = idx / (grid.nx * grid.ny);
-        int iy = (idx - iz * grid.nx * grid.ny) / grid.nx;
-        int ix = idx - iz * grid.nx * grid.ny - iy * grid.nx;
-        if (iz == 0 || iz == grid.nz)
-            grid.vel_w[idx] = 0.f;
+    if (iy == 0 || is_boundary_normal) grid.vel_v[idx] = 0.f; // keeps ceiling open
+  }
+
+  // W-faces
+  int w_size = grid.nx * grid.ny * (grid.nz + 1);
+  if (idx < w_size) {
+    int iz = idx / (grid.nx * grid.ny);
+    int iy = (idx - iz * grid.nx * grid.ny) / grid.nx;
+    int ix = idx - iz * grid.nx * grid.ny - iy * grid.nx;
+
+    bool is_boundary_normal = false;
+    if (iz > 0 && iz < grid.nz) {
+      int bk = ix + grid.nx * (iy + grid.ny * (iz - 1));
+      int fr = ix + grid.nx * (iy + grid.ny * iz);
+      // ONLY zero if it is the precise fluid-solid interface boundary
+      if ((grid.cell_type[bk] == SOLID && grid.cell_type[fr] != SOLID) ||
+        (grid.cell_type[bk] != SOLID && grid.cell_type[fr] == SOLID)) {
+        is_boundary_normal = true;
+      }
     }
+
+    if (iz == 0 || iz == grid.nz || is_boundary_normal) grid.vel_w[idx] = 0.f;
+  }
 }

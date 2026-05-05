@@ -29,6 +29,12 @@ static bool   g_dragging     = false;
 static double g_last_mouse_x = 0.0;
 static double g_last_mouse_y = 0.0;
 
+// Sphere controls
+static bool s_dragging = false;
+static float sphere_cx = 0.0;
+static float sphere_cy = -0.5;
+static float sphere_cz = 0.0;
+
 // Simulation control.
 static bool g_paused            = false;
 static bool g_restart_requested = false;
@@ -51,23 +57,55 @@ static void mouse_button_callback(GLFWwindow* window, int button, int action, in
             g_dragging = false;
         }
     }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+      if (action == GLFW_PRESS) {
+        s_dragging = true;
+        glfwGetCursorPos(window, &g_last_mouse_x, &g_last_mouse_y);
+      }
+      else {
+        s_dragging = false;
+      }
+    }
 }
 
 static void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos) {
     (void)window;
-    if (!g_dragging) return;
     double dx = xpos - g_last_mouse_x;
     double dy = ypos - g_last_mouse_y;
     g_last_mouse_x = xpos;
     g_last_mouse_y = ypos;
 
-    const float sensitivity = 0.005f;
-    g_cam_yaw   += (float)dx * sensitivity;
-    g_cam_pitch += (float)dy * sensitivity;
+    if (s_dragging) {
+      // How many world units the sphere moves per screen pixel
+      const float drag_speed = 0.005f;
 
-    // Prevent flipping past straight up/down.
-    if (g_cam_pitch < -1.52f) g_cam_pitch = -1.52f;
-    if (g_cam_pitch >  1.52f) g_cam_pitch =  1.52f;
+      float forward_x = sin(g_cam_yaw);
+      float forward_z = -cos(g_cam_yaw);
+
+      float right_x = cos(g_cam_yaw);
+      float right_z = sin(g_cam_yaw);
+
+      float move_x = (float)(dx * right_x + dy * forward_x);
+      float move_z = (float)(dx * right_z + dy * forward_z);
+
+      sphere_cx -= move_x * drag_speed;
+      sphere_cz += move_z * drag_speed;
+
+
+      if (sphere_cx < -1.0f) sphere_cx = -1.0f;
+      if (sphere_cx > 1.0f) sphere_cx = 1.0f;
+      if (sphere_cz < -1.0f) sphere_cz = -1.0f;
+      if (sphere_cz > 1.0f) sphere_cz = 1.0f;
+    }
+    else if (g_dragging) {
+      const float sensitivity = 0.005f;
+      g_cam_yaw += (float)dx * sensitivity;
+      g_cam_pitch += (float)dy * sensitivity;
+
+      // Prevent flipping past straight up/down.
+      if (g_cam_pitch < -1.52f) g_cam_pitch = -1.52f;
+      if (g_cam_pitch > 1.52f) g_cam_pitch = 1.52f;
+    }
 }
 
 static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
@@ -275,6 +313,7 @@ int main(int argc, char* argv[]) {
 
     ParticleSystem particleSys;
     particleSys.initialise_particles(num_particles);
+    particleSys.r = 0.5;
 
     float domain_size = 2.0f;
     int   grid_res = 32;
@@ -343,6 +382,10 @@ int main(int argc, char* argv[]) {
             g_restart_requested = false;
             g_paused = false;
         }
+
+        particleSys.cx = sphere_cx;
+        particleSys.cy = sphere_cy;
+        particleSys.cz = sphere_cz;
 
         float dt = frame_step(prev_time, particleSys, grid, g_paused);
         prev_dt = dt;

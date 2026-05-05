@@ -13,6 +13,7 @@ __global__ void compute_divergence(DeviceMACGrid grid);
 __global__ void jacobi_iteration(DeviceMACGrid grid, float dt);
 __global__ void apply_pressure(DeviceMACGrid grid, float dt);
 __global__ void enforce_boundary(DeviceMACGrid grid);
+__global__ void mark_solids(DeviceMACGrid grid, float cx, float cy, float cz, float r);
 
 // Apply gravity only to v-faces adjacent to at least one FLUID cell
 __global__ void add_gravity_to_grid(DeviceMACGrid grid, float dt) {
@@ -35,21 +36,53 @@ __global__ void add_gravity_to_grid(DeviceMACGrid grid, float dt) {
 }
 
 // Advect particles using their (already-updated) velocities, then clamp to domain
-__global__ void advect_and_bounce(int count, float dt, DeviceParticles dp) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < count) {
-        dp.x[i] += dp.vx[i] * dt;
-        dp.y[i] += dp.vy[i] * dt;
-        dp.z[i] += dp.vz[i] * dt;
+__global__ void advect_and_bounce(int count, float dt, DeviceParticles dp, float dx, float cx, float cy, float cz, float r) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= count) return;
 
-        // Clamp to domain [-1, 1]^3 with velocity reflection
-        if (dp.x[i] < -1.f) { dp.x[i] = -1.f; dp.vx[i] *= -0.65f; }
-        if (dp.x[i] >  1.f) { dp.x[i] =  1.f; dp.vx[i] *= -0.65f; }
-        if (dp.y[i] < -1.f) { dp.y[i] = -1.f; dp.vy[i] *= -0.65f; }
-        if (dp.y[i] >  1.f) { dp.y[i] =  1.f; dp.vy[i] *= -0.65f; }
-        if (dp.z[i] < -1.f) { dp.z[i] = -1.f; dp.vz[i] *= -0.65f; }
-        if (dp.z[i] >  1.f) { dp.z[i] =  1.f; dp.vz[i] *= -0.65f; }
+  // 1. Standard Advection
+  dp.x[i] += dp.vx[i] * dt;
+  dp.y[i] += dp.vy[i] * dt;
+  dp.z[i] += dp.vz[i] * dt;
+
+  // Clamp to domain [-1, 1]^3 with velocity reflection
+  if (dp.x[i] < -1.f) { dp.x[i] = -1.f; dp.vx[i] *= -0.65f; }
+  if (dp.x[i] > 1.f) { dp.x[i] = 1.f; dp.vx[i] *= -0.65f; }
+  if (dp.y[i] < -1.f) { dp.y[i] = -1.f; dp.vy[i] *= -0.65f; }
+  if (dp.y[i] > 1.f) { dp.y[i] = 1.f; dp.vy[i] *= -0.65f; }
+  if (dp.z[i] < -1.f) { dp.z[i] = -1.f; dp.vz[i] *= -0.65f; }
+  if (dp.z[i] > 1.f) { dp.z[i] = 1.f; dp.vz[i] *= -0.65f; }
+
+  // INFLATE radius to protect particles from jagged voxel corners
+  float effective_r = r + dx;
+
+  float dx_dist = dp.x[i] - cx;
+  float dy_dist = dp.y[i] - cy;
+  float dz_dist = dp.z[i] - cz;
+  float dist_sq = dx_dist * dx_dist + dy_dist * dy_dist + dz_dist * dz_dist;
+
+  float effective_r_sq = effective_r * effective_r;
+
+  if (dist_sq < effective_r_sq && dist_sq > 0.0001f) {
+    float dist_true = sqrtf(dist_sq);
+    float nx = dx_dist / dist_true;
+    float ny = dy_dist / dist_true;
+    float nz = dz_dist / dist_true;
+
+    // Push out to the inflated boundary + tiny epsilon
+    const float EPS = dx * 0.1f;
+    dp.x[i] = cx + nx * (effective_r + EPS);
+    dp.y[i] = cy + ny * (effective_r + EPS);
+    dp.z[i] = cz + nz * (effective_r + EPS);
+
+    // Remove velocity heading into the sphere
+    float v_dot_n = dp.vx[i] * nx + dp.vy[i] * ny + dp.vz[i] * nz;
+    if (v_dot_n < 0.0f) {
+      dp.vx[i] -= v_dot_n * nx;
+      dp.vy[i] -= v_dot_n * ny;
+      dp.vz[i] -= v_dot_n * nz;
     }
+  }
 }
 
 ParticleSystem::ParticleSystem() {
@@ -65,6 +98,11 @@ ParticleSystem::ParticleSystem() {
     h_fx = std::vector<float>();
     h_fy = std::vector<float>();
     h_fz = std::vector<float>();
+
+    cx = 0;
+    cy = 0;
+    cz = 0;
+    r = 0;
 }
 
 ParticleSystem::~ParticleSystem() {}
@@ -153,6 +191,8 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     grid.clear();
     dg = grid.get_device_grid();
 
+    mark_solids<<<face_blocks, tpb>>>(dg, cx, cy, cz, r);
+
     // 2. Particle-to-Grid transfer
     p2g_transfer<<<particle_blocks, tpb>>>(dg, dp, count);
     //cudaDeviceSynchronize();
@@ -206,7 +246,7 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     //cudaDeviceSynchronize();
 
     // 6. Advect particles with the new velocities
-    advect_and_bounce<<<particle_blocks, tpb>>>(count, dt, dp);
+    advect_and_bounce<<<particle_blocks, tpb>>>(count, dt, dp, dg.dx, cx, cy, cz, r);
     //cudaDeviceSynchronize();
 
     // 7. Sync positions back to CPU for rendering

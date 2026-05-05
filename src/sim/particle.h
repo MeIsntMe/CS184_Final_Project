@@ -25,6 +25,12 @@ class ParticleSystem{
 
         int count;
 
+        // sphere params
+        float cx;
+        float cy;
+        float cz;
+        float r;
+
         // Host (CPU vectors just for initialization and maybe other stuff not sure yet)
         std::vector<float> h_x;
         std::vector<float> h_y;
