@@ -12,14 +12,15 @@ find_package(CUDAToolkit REQUIRED)
 # Thrust is bundled with the CUDA Toolkit — no separate find_package needed
 
 # --- 3. Source Files (Clean & include headers) ---
-set(SRC_FILES 
-    src/main.cpp 
+set(SRC_FILES
+    src/main.cpp
     src/sim/particle.cu
     src/sim/grid.cu
     src/sim/pressure_solver.cu
     src/sim/particle.h
     src/sim/p2g.cuh
     src/renderer/shader.cpp
+    external/stb/stb_image.cpp
     src/shaders/particles.vert
     src/shaders/particles.frag
     src/shaders/density.comp
@@ -34,7 +35,7 @@ target_include_directories(glad PUBLIC external/glad/include)
 add_executable(stream_processor ${SRC_FILES})
 
 # --- 5. Modern Linking & Properties ---
-target_include_directories(stream_processor PRIVATE src external/glad/include ${CUDAToolkit_INCLUDE_DIRS})
+target_include_directories(stream_processor PRIVATE src external/glad/include external/stb ${CUDAToolkit_INCLUDE_DIRS})
 target_link_libraries(stream_processor PRIVATE
     OpenGL::GL
     glfw

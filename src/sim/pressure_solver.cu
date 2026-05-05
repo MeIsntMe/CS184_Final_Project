@@ -117,6 +117,61 @@ __global__ void apply_pressure(DeviceMACGrid grid, float dt) {
     }
 }
 
+// Mark cells whose centres fall inside the sphere as SOLID each frame (called after P2G)
+__global__ void mark_solid_sphere(DeviceMACGrid grid, float cx, float cy, float cz, float radius) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= grid.nx * grid.ny * grid.nz) return;
+
+    int iz = idx / (grid.nx * grid.ny);
+    int iy = (idx - iz * grid.nx * grid.ny) / grid.nx;
+    int ix = idx - iz * grid.nx * grid.ny - iy * grid.nx;
+
+    // cell centre in world space (domain is [-1,1]^3)
+    float wx = -1.f + (ix + 0.5f) * grid.dx;
+    float wy = -1.f + (iy + 0.5f) * grid.dx;
+    float wz = -1.f + (iz + 0.5f) * grid.dx;
+
+    float d2 = (wx-cx)*(wx-cx) + (wy-cy)*(wy-cy) + (wz-cz)*(wz-cz);
+    if (d2 < radius * radius)
+        grid.cell_type[idx] = SOLID;
+}
+
+// Zero face velocities adjacent to any SOLID cell (handles sphere + any future obstacles I HOPE lol)
+__global__ void enforce_solid_face_velocities(DeviceMACGrid grid) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int u_size = (grid.nx + 1) * grid.ny * grid.nz;
+    int v_size = grid.nx * (grid.ny + 1) * grid.nz;
+    int w_size = grid.nx * grid.ny * (grid.nz + 1);
+
+    if (idx < u_size) {
+        int iz = idx / ((grid.nx + 1) * grid.ny);
+        int iy = (idx - iz * (grid.nx + 1) * grid.ny) / (grid.nx + 1);
+        int ix = idx - iz * (grid.nx + 1) * grid.ny - iy * (grid.nx + 1);
+        bool l = (ix > 0       && grid.cell_type[(ix-1) + grid.nx*(iy + grid.ny*iz)] == SOLID);
+        bool r = (ix < grid.nx && grid.cell_type[ ix    + grid.nx*(iy + grid.ny*iz)] == SOLID);
+        if (l || r) grid.vel_u[idx] = 0.f;
+    }
+
+    if (idx < v_size) {
+        int iz = idx / (grid.nx * (grid.ny + 1));
+        int iy = (idx - iz * grid.nx * (grid.ny + 1)) / grid.nx;
+        int ix = idx - iz * grid.nx * (grid.ny + 1) - iy * grid.nx;
+        bool b = (iy > 0       && grid.cell_type[ix + grid.nx*((iy-1) + grid.ny*iz)] == SOLID);
+        bool t = (iy < grid.ny && grid.cell_type[ix + grid.nx*( iy    + grid.ny*iz)] == SOLID);
+        if (b || t) grid.vel_v[idx] = 0.f;
+    }
+
+    if (idx < w_size) {
+        int iz = idx / (grid.nx * grid.ny);
+        int iy = (idx - iz * grid.nx * grid.ny) / grid.nx;
+        int ix = idx - iz * grid.nx * grid.ny - iy * grid.nx;
+        bool bk = (iz > 0       && grid.cell_type[ix + grid.nx*(iy + grid.ny*(iz-1))] == SOLID);
+        bool fr = (iz < grid.nz && grid.cell_type[ix + grid.nx*(iy + grid.ny* iz   )] == SOLID);
+        if (bk || fr) grid.vel_w[idx] = 0.f;
+    }
+}
+
 // Enforce solid wall BCs: zero normal velocity on all domain boundary faces
 __global__ void enforce_boundary(DeviceMACGrid grid) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -137,7 +192,7 @@ __global__ void enforce_boundary(DeviceMACGrid grid) {
         int iz = idx / (grid.nx * (grid.ny + 1));
         int iy = (idx - iz * grid.nx * (grid.ny + 1)) / grid.nx;
         int ix = idx - iz * grid.nx * (grid.ny + 1) - iy * grid.nx;
-        if (iy == 0 || iy == grid.ny)
+        if (iy == 0)
             grid.vel_v[idx] = 0.f;
     }
 

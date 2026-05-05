@@ -4,6 +4,8 @@
 #include "sim/particle.h"
 #include "sim/grid.h"
 #include "renderer/shader.h"
+#include "renderer/dome.h"
+#include "renderer/camera.h"
 
 #include <iostream>
 #include <fstream>
@@ -30,8 +32,10 @@ static double g_last_mouse_x = 0.0;
 static double g_last_mouse_y = 0.0;
 
 // Simulation control.
-static bool g_paused            = false;
-static bool g_restart_requested = false;
+static bool  g_paused            = false;
+static bool  g_restart_requested = false;
+static int   g_preset            = 1;
+static float g_time_scale        = 0.5f;
 
 // Raymarching variables
 static float densityMultiplier = 0.09;
@@ -105,6 +109,21 @@ static void process_input(GLFWwindow* window, float dt) {
     if (r_now && !r_was_pressed) g_restart_requested = true;
     p_was_pressed = p_now;
     r_was_pressed = r_now;
+
+    // Keys 1–9 load presets (fire once per press).
+    static bool preset_was_pressed[9] = {};
+    const int preset_keys[9] = {
+        GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, GLFW_KEY_5,
+        GLFW_KEY_6, GLFW_KEY_7, GLFW_KEY_8, GLFW_KEY_9
+    };
+    for (int i = 0; i < 9; i++) {
+        bool now = glfwGetKey(window, preset_keys[i]) == GLFW_PRESS;
+        if (now && !preset_was_pressed[i]) {
+            g_preset = i + 1;
+            g_restart_requested = true;
+        }
+        preset_was_pressed[i] = now;
+    }
 }
 
 
@@ -134,7 +153,7 @@ static float frame_step(float& prev_time, ParticleSystem &partSys, MACGrid &grid
     prev_time = new_time;
 
     if (!paused)
-        partSys.step(dt, grid);
+        partSys.step(dt * g_time_scale, grid);
 
     return dt;
 }
@@ -273,8 +292,11 @@ int main(int argc, char* argv[]) {
     );
 
 
+    Dome dome;
+    dome.init("textures/sky.jpg");
+
     ParticleSystem particleSys;
-    particleSys.initialise_particles(num_particles);
+    particleSys.initialise_particles(num_particles, g_preset);
 
     float domain_size = 2.0f;
     int   grid_res = 32;
@@ -339,7 +361,7 @@ int main(int argc, char* argv[]) {
         process_input(window, prev_dt);
 
         if (g_restart_requested) {
-            particleSys.initialise_particles(num_particles);
+            particleSys.initialise_particles(num_particles, g_preset);
             g_restart_requested = false;
             g_paused = false;
         }
@@ -352,7 +374,7 @@ int main(int argc, char* argv[]) {
         }
 
         pos_buffer.clear();
-        for (int i = 0; i < particleSys.count; i++) {
+        for (int i = 0; i < particleSys.active_count; i++) {
             pos_buffer.push_back(particleSys.h_x[i]);
             pos_buffer.push_back(particleSys.h_y[i]);
             pos_buffer.push_back(particleSys.h_z[i]);
@@ -365,6 +387,17 @@ int main(int argc, char* argv[]) {
 
         glClearColor(0.03f, 0.03f, 0.05f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Sky dome — drawn first as background, no depth write
+        {
+            Mat4 proj = perspective(1.05f, 900.f / 700.f, 0.01f, 200.f); // ~60 deg FOV
+            Mat4 view = domeView(g_cam_yaw, g_cam_pitch);
+            Mat4 vp   = matMul(proj, view);
+            glUseProgram(dome.shader);
+            glUniformMatrix4fv(glGetUniformLocation(dome.shader, "uVP"), 1, GL_FALSE, vp.data());
+            glUniform1f(glGetUniformLocation(dome.shader, "uBrightness"), 1.0f);
+            dome.draw();
+        }
 
         particleShader.use();
 
@@ -395,12 +428,12 @@ int main(int argc, char* argv[]) {
         densityComp.setVec3("domainSize", 2.0f, 2.0f, 2.0f);
         densityComp.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
         densityComp.setInt("gridRes", grid_res);
-        densityComp.setInt("numParticles", num_particles);
+        densityComp.setInt("numParticles", particleSys.active_count);
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vbo);
         glBindImageTexture(0, densityTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F);
 
-        glDispatchCompute((num_particles + 255) / 256, 1, 1);
+        glDispatchCompute((particleSys.active_count + 255) / 256, 1, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         domainShader.use();
@@ -412,7 +445,6 @@ int main(int argc, char* argv[]) {
 
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         domainShader.setVec3("camOffset", g_cam_x, g_cam_y, g_cam_z);
         domainShader.setFloat("focal", g_focal);
         domainShader.setFloat("camYaw", g_cam_yaw);
@@ -427,6 +459,8 @@ int main(int argc, char* argv[]) {
 
         domainShader.setVec3("lightDir", 0.0, 1.0, 0.0);
         domainShader.setVec3("lightColor", 1.0, 0.9, 0.8);
+        domainShader.setVec3("sphereCenter", particleSys.sphere.cx, particleSys.sphere.cy, particleSys.sphere.cz);
+        domainShader.setFloat("sphereRadius", particleSys.sphere.radius);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_3D, densityTexture);
@@ -453,7 +487,8 @@ int main(int argc, char* argv[]) {
     save_log(folder, filename, num_particles, end_time - start_time, frames);
 
     glDeleteBuffers(1, &vbo);
-    glDeleteVertexArrays(1, &vao);    
+    glDeleteVertexArrays(1, &vao);
+    dome.cleanup();
 
     glfwDestroyWindow(window);
     glfwTerminate();
