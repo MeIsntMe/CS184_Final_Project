@@ -341,6 +341,12 @@ int main(int argc, char* argv[]) {
         pos_buffer.push_back(particleSys.h_z[i]);
     }
 
+    // Bind the sky texture to Texture Unit 1
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, dome.texture);
+
+    
+
     // setting up compute shader
     GLuint densityTexture;
     glGenTextures(1, &densityTexture);
@@ -460,6 +466,12 @@ int main(int argc, char* argv[]) {
 
         domainShader.use();
 
+        // Add these to force OpenGL to read the texture without needing mipmaps
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        domainShader.setInt("skyTexture", 1);
+
+
         
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
@@ -488,8 +500,14 @@ int main(int argc, char* argv[]) {
         glBindTexture(GL_TEXTURE_3D, densityTexture);
         domainShader.setInt("densityTexture", 0);
 
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, dome.texture);
+        domainShader.setInt("skyTexture", 1);
+
         glBindVertexArray(emptyVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        glActiveTexture(GL_TEXTURE0);
 
 
         // 5. Swap
