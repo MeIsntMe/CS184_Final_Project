@@ -1,9 +1,16 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#ifdef USE_CUDA
 #include "sim/particle.h"
+#else
+#include "sim/particle_cpu.h"
+#endif
+
 #include "sim/grid.h"
 #include "renderer/shader.h"
+#include "renderer/dome.h"
+#include "renderer/camera.h"
 
 #include <iostream>
 #include <fstream>
@@ -16,7 +23,7 @@
 #include <charconv>
 
 
-// Camera state – must be global so GLFW callbacks can reach them.
+// Camera state � must be global so GLFW callbacks can reach them.
 static float g_cam_x    = 1.2f;
 static float g_cam_y    = 0.0f;
 static float g_cam_z    = -3.5f;
@@ -265,13 +272,40 @@ int main(int argc, char* argv[]) {
         "src/shaders/particles.frag"
     );
 
+
+    //dome stuff
+    Dome dome;
+    std::string domePath = std::string(SHADER_DIR) + "/textures/sky.jpg";
+    std::cout << domePath << "\n";
+    dome.init(domePath);  // path to your texture
+    if (dome.texture == 0)
+        std::cout << "TEXTURE FAILED TO LOAD\n";
+    else
+        std::cout << "Texture loaded OK, id = " << dome.texture << "\n";
+
+    FILE* f = fopen("textures/sky.jpg", "rb");
+    std::cout << "sky.jpg found: " << (f ? "YES" : "NO") << "\n";
+    if (f) fclose(f);
+
+    Mat4 proj = perspective(
+        3.14159f / 3.f,   // 60 degree FOV
+        900.f / 700.f,    // window aspect ratio
+        0.01f, 200.f      // near/far
+    );
+    Mat4 view = identity();   // static camera for now
+
+    // Combine into VP matrix
+    Mat4 vp{};
+    // simple multiply proj * view (identity so vp = proj for now)
+    vp = proj;
+    //end dome stuff
+
     Shader densityComp("src/shaders/density.comp");
 
     Shader domainShader(
       "src/shaders/domain.vert",
       "src/shaders/domain_optics.frag"
     );
-
 
     ParticleSystem particleSys;
     particleSys.initialise_particles(num_particles);
@@ -351,6 +385,16 @@ int main(int argc, char* argv[]) {
           glfwSetWindowShouldClose(window, true);
         }
 
+        // 1. Clear
+        glClearColor(0.45f, 0.55f, 0.70f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // 2. Draw dome (background)
+        glUseProgram(dome.shader);
+        glUniformMatrix4fv(glGetUniformLocation(dome.shader, "uVP"),
+          1, GL_FALSE, vp.data());
+        glUniform1f(glGetUniformLocation(dome.shader, "uBrightness"), 1.0f);
+        dome.draw();
         pos_buffer.clear();
         for (int i = 0; i < particleSys.count; i++) {
             pos_buffer.push_back(particleSys.h_x[i]);
@@ -363,9 +407,6 @@ int main(int argc, char* argv[]) {
             pos_buffer.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        glClearColor(0.03f, 0.03f, 0.05f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
         particleShader.use();
 
         particleShader.setVec3("camOffset", g_cam_x, g_cam_y, g_cam_z);
@@ -375,15 +416,8 @@ int main(int argc, char* argv[]) {
 
         // Normal color of the particles.
         particleShader.setVec3("particleColor", 1.0f, 1.0f, 1.0f);
-
-        // Fog color.
         particleShader.setVec3("fogColor", 0.45f, 0.55f, 0.70f);
-
-        // Fog strength.
-        // Lower = clearer.
-        // Higher = foggier.
         particleShader.setFloat("fogDensity", 0.35f);
-
         glBindVertexArray(vao);
         //glDrawArrays(GL_POINTS, 0, particleSys.count);
 
@@ -436,6 +470,7 @@ int main(int argc, char* argv[]) {
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
 
+        // 5. Swap
         glfwSwapBuffers(window);
         glfwPollEvents();
         frames++;
@@ -454,6 +489,7 @@ int main(int argc, char* argv[]) {
 
     glDeleteBuffers(1, &vbo);
     glDeleteVertexArrays(1, &vao);    
+    dome.cleanup();
 
     glfwDestroyWindow(window);
     glfwTerminate();
