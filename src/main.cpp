@@ -319,6 +319,11 @@ int main(int argc, char* argv[]) {
 
     Shader densityComp("src/shaders/density.comp");
 
+    Shader floorShader(
+      "src/shaders/floor.vert",
+      "src/shaders/floor.frag"
+    );
+
     Shader domainShader(
       "src/shaders/domain.vert",
       "src/shaders/domain_optics.frag"
@@ -328,7 +333,8 @@ int main(int argc, char* argv[]) {
     particleSys.initialise_particles(num_particles, g_preset);
 
     float domain_size = 2.0f;
-    int   grid_res = 32;
+    int   grid_res    = 32;
+    int   density_res = 32;
     float dx = domain_size / grid_res;
     MACGrid grid(grid_res, grid_res, grid_res, dx);
 
@@ -358,7 +364,7 @@ int main(int argc, char* argv[]) {
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_BORDER);
 
-    glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, grid_res, grid_res, grid_res, 0, GL_RED, GL_FLOAT, nullptr);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, density_res, density_res, density_res, 0, GL_RED, GL_FLOAT, nullptr);
     glBindTexture(GL_TEXTURE_3D, 0);
 
     float borderColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -367,6 +373,9 @@ int main(int argc, char* argv[]) {
     // for rendering the domain
     GLuint emptyVAO;
     glGenVertexArrays(1, &emptyVAO);
+
+    GLuint floorVAO;
+    glGenVertexArrays(1, &floorVAO);
 
     GLuint vao = 0, vbo = 0;
     glGenVertexArrays(1, &vao);
@@ -434,6 +443,17 @@ int main(int argc, char* argv[]) {
             dome.draw();
         }
 
+        // White floor quad at y=-1, drawn before domain so alpha=0 domain pixels show it through
+        glDisable(GL_CULL_FACE);
+        floorShader.use();
+        floorShader.setVec3("camOffset", g_cam_x, g_cam_y, g_cam_z);
+        floorShader.setFloat("focal", g_focal);
+        floorShader.setFloat("camYaw", g_cam_yaw);
+        floorShader.setFloat("camPitch", g_cam_pitch);
+        glBindVertexArray(floorVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
+
         particleShader.use();
 
         particleShader.setVec3("camOffset", g_cam_x, g_cam_y, g_cam_z);
@@ -455,7 +475,7 @@ int main(int argc, char* argv[]) {
 
         densityComp.setVec3("domainSize", 2.0f, 2.0f, 2.0f);
         densityComp.setVec3("domainCenter", 0.0f, 0.0f, 0.0f);
-        densityComp.setInt("gridRes", grid_res);
+        densityComp.setInt("gridRes", density_res);
         densityComp.setInt("numParticles", particleSys.active_count);
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vbo);

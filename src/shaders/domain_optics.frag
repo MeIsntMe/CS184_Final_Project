@@ -109,12 +109,14 @@ void main() {
     bool hitSurface = false;
     vec3 hitWorldPos;
     vec3 hitTexPos;
+    float accumDensity = 0.0;
 
     for(int i = 0; i < 300; i++) {
         if(tNear > tFar) break;
 
         vec3 texPos = (currentWorldPos - boxMin) / domainSize;
         float density = texture(densityTexture, texPos).r;
+        accumDensity += density * stepSize;
 
         if (density > surfaceThreshold) {
             hitSurface = true;
@@ -246,7 +248,17 @@ void main() {
         FragColor = vec4(tonemapped, 1.0);
         
     } else {
-        // Leave alpha at 0.0 so the C++ sky dome drawn behind it shows through normally
-        FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        // Determine exit face: floor or side wall
+        bool isFloorRay = (rayDir.y < -1e-5) &&
+                          (abs((vCamWorldPos + rayDir * tFar).y - boxMin.y) < 0.01);
+
+        if (isFloorRay) {
+            // alpha=0: the separately drawn floor quad shows through
+            FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        } else {
+            // Glass walls — sky seen through a blue-tinted pane
+            vec3 wallColor = texture(skyTexture, dirToUV(rayDir)).rgb * vec3(0.82, 0.92, 1.0);
+            FragColor = vec4(wallColor, 0.28);
+        }
     }
 }

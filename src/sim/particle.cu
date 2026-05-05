@@ -42,9 +42,13 @@ __global__ void emit_particles(DeviceParticles dp, int start, int n,
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
     int idx = start + i;
-    float jx = (float)((unsigned)(idx * 2654435761u) % 1000u) / 1000.f * 0.02f - 0.01f;
-    float jz = (float)((unsigned)(idx * 2246822519u) % 1000u) / 1000.f * 0.02f - 0.01f;
+    float jx = (float)((unsigned)(idx * 2654435761u) % 1000u) / 1000.f * 0.06f - 0.03f;
+    float jz = (float)((unsigned)(idx * 2246822519u) % 1000u) / 1000.f * 0.06f - 0.03f;
     float jy = (float)((unsigned)(idx * 2166136261u) % 1000u) / 1000.f * 0.30f - 0.15f;
+    // Small random x/z velocity spread so the stream hits the sphere as a
+    // conical jet, preventing symmetry-breaking at the apex on the coarse grid.
+    float jvx = (float)((unsigned)(idx * 1664525u + 1013904223u) % 1000u) / 1000.f * 0.6f - 0.3f;
+    float jvz = (float)((unsigned)(idx * 22695477u  + 1u)        % 1000u) / 1000.f * 0.6f - 0.3f;
     dp.x[idx] = ex + jx;
     dp.y[idx] = ey + jy;
     dp.z[idx] = ez + jz;
@@ -55,9 +59,9 @@ __global__ void emit_particles(DeviceParticles dp, int start, int n,
         float v2 = evy * evy + 2.f * 14.45f * (-jy);
         vy_out = -sqrtf(v2);
     }
-    dp.vx[idx] = 0.f;
+    dp.vx[idx] = jvx;
     dp.vy[idx] = vy_out;
-    dp.vz[idx] = 0.f;
+    dp.vz[idx] = jvz;
 }
 
 // Advect particles using their (already-updated) velocities, then clamp to domain
