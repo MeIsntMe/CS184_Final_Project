@@ -1,9 +1,16 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#ifdef USE_CUDA
 #include "sim/particle.h"
+#else
+#include "sim/particle_cpu.h"
+#endif
+
 #include "sim/grid.h"
 #include "renderer/shader.h"
+#include "renderer/dome.h"
+#include "renderer/camera.h"
 
 #include <iostream>
 #include <vector>
@@ -24,7 +31,7 @@ static void frame_step(float& prev_time, ParticleSystem &partSys) {
     float dt = new_time - prev_time;
     prev_time = new_time;
 
-    std::cout << dt << "\n";
+   // std::cout << dt << "\n";
     partSys.step(dt);
 
     return;
@@ -75,6 +82,32 @@ int main() {
         "src/shaders/particles.frag"
     );
 
+
+    //dome stuff
+    Dome dome;
+    dome.init("textures/sky.jpg");  // path to your texture
+    if (dome.texture == 0)
+        std::cout << "TEXTURE FAILED TO LOAD\n";
+    else
+        std::cout << "Texture loaded OK, id = " << dome.texture << "\n";
+
+    FILE* f = fopen("textures/sky.jpg", "rb");
+    std::cout << "sky.jpg found: " << (f ? "YES" : "NO") << "\n";
+    if (f) fclose(f);
+
+    Mat4 proj = perspective(
+        3.14159f / 3.f,   // 60 degree FOV
+        900.f / 700.f,    // window aspect ratio
+        0.01f, 200.f      // near/far
+    );
+    Mat4 view = identity();   // static camera for now
+
+    // Combine into VP matrix
+    Mat4 vp{};
+    // simple multiply proj * view (identity so vp = proj for now)
+    vp = proj;
+    //end dome stuff
+
     ParticleSystem particleSys;
     particleSys.initialise_particles(1000);
 
@@ -113,39 +146,20 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
         process_input(window);
-
         frame_step(prev_time, particleSys);
-       
-        //p2g_transfer(grid, particleSys);
 
+        // 1. Clear
+        glClearColor(0.45f, 0.55f, 0.70f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        //debug block, remove after working
-        float min_x = 999, max_x = -999;
-        float min_y = 999, max_y = -999;
-        for (int i = 0; i < particleSys.count; i++) {
-            min_x = min(min_x, particleSys.h_x[i]);
-            max_x = max(max_x, particleSys.h_x[i]);
-            min_y = min(min_y, particleSys.h_y[i]);
-            max_y = max(max_y, particleSys.h_y[i]);
-        }
-        std::cout << "Particle x range: " << min_x << " to " << max_x << "\n";
-        std::cout << "Particle y range: " << min_y << " to " << max_y << "\n";
-        /*std::cout << "dx = " << grid.dx << "\n";
-        std::cout << "Grid size: " << grid.nx << "x" << grid.ny << "x" << grid.nz << "\n";*/
+        // 2. Draw dome (background)
+        glUseProgram(dome.shader);
+        glUniformMatrix4fv(glGetUniformLocation(dome.shader, "uVP"),
+            1, GL_FALSE, vp.data());
+        glUniform1f(glGetUniformLocation(dome.shader, "uBrightness"), 1.0f);
+        dome.draw();
 
-        //// Check all vel_v not just cell-centred array
-        //int nonzero = 0;
-        //for (int i = 0; i < (int)grid.vel_v.size(); i++)
-        //    if (grid.vel_v[i] != 0.f) nonzero++;
-        //std::cout << "Non-zero vel_v count: " << nonzero << "\n";
-
-        //// Check vel_u too
-        //nonzero = 0;
-        //for (int i = 0; i < (int)grid.vel_u.size(); i++)
-        //    if (grid.vel_u[i] != 0.f) nonzero++;
-        //std::cout << "Non-zero vel_u count: " << nonzero << "\n";
-        ////end of debug block
-
+        // 3. Upload particle positions
         pos_buffer.clear();
         for (int i = 0; i < particleSys.count; i++) {
             pos_buffer.push_back(particleSys.h_x[i]);
@@ -158,31 +172,22 @@ int main() {
             pos_buffer.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        glClearColor(0.45f, 0.55f, 0.70f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+        // 4. Draw particles on top
         particleShader.use();
-
-        // Normal color of the particles.
         particleShader.setVec3("particleColor", 1.0f, 1.0f, 1.0f);
-
-        // Fog color.
         particleShader.setVec3("fogColor", 0.45f, 0.55f, 0.70f);
-
-        // Fog strength.
-        // Lower = clearer.
-        // Higher = foggier.
         particleShader.setFloat("fogDensity", 0.35f);
-
         glBindVertexArray(vao);
         glDrawArrays(GL_POINTS, 0, particleSys.count);
 
+        // 5. Swap
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
     glDeleteBuffers(1, &vbo);
     glDeleteVertexArrays(1, &vao);    
+    dome.cleanup();
 
     glfwDestroyWindow(window);
     glfwTerminate();

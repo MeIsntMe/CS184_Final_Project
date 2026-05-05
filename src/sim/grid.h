@@ -3,8 +3,8 @@
 #include <algorithm>
 
 #ifndef __CUDACC__
-    #define __device__
-    #define __host__
+#define __device__
+#define __host__
 #endif
 
 enum CellType { FLUID, AIR, SOLID };
@@ -24,19 +24,19 @@ struct DeviceMACGrid {
     float* pressure;
     CellType* cell_type;
 
-    // device so its callable by GPU
     __host__ __device__ int idx(int x, int y, int z) const {
         return x + nx * (y + ny * z);
     }
 };
 
+#ifdef USE_CUDA
+
 #include <thrust/device_vector.h>
-class MACGrid{
+class MACGrid {
 public:
     int nx, ny, nz;
     float dx;
 
-    // Device Vectors (GPU VRAM)
     thrust::device_vector<float> d_vel_u;
     thrust::device_vector<float> d_vel_v;
     thrust::device_vector<float> d_vel_w;
@@ -50,7 +50,49 @@ public:
 
     MACGrid(int nx, int ny, int nz, float dx);
     void clear();
-
-    // Helper to easily pack the pointers for the kernel
     DeviceMACGrid get_device_grid();
 };
+
+#else
+
+// CPU-only version for builds without CUDA
+class MACGrid {
+public:
+    int nx, ny, nz;
+    float dx;
+
+    std::vector<float> d_vel_u;
+    std::vector<float> d_vel_v;
+    std::vector<float> d_vel_w;
+
+    std::vector<float> d_weight_u;
+    std::vector<float> d_weight_v;
+    std::vector<float> d_weight_w;
+
+    std::vector<float> d_pressure;
+    std::vector<CellType> d_cell_type;
+
+    MACGrid(int nx, int ny, int nz, float dx)
+        : nx(nx), ny(ny), nz(nz), dx(dx),
+        d_vel_u((nx + 1)* ny* nz, 0.f),
+        d_vel_v(nx* (ny + 1)* nz, 0.f),
+        d_vel_w(nx* ny* (nz + 1), 0.f),
+        d_weight_u((nx + 1)* ny* nz, 0.f),
+        d_weight_v(nx* (ny + 1)* nz, 0.f),
+        d_weight_w(nx* ny* (nz + 1), 0.f),
+        d_pressure(nx* ny* nz, 0.f),
+        d_cell_type(nx* ny* nz, AIR)
+    {
+    }
+
+    void clear() {
+        std::fill(d_vel_u.begin(), d_vel_u.end(), 0.f);
+        std::fill(d_vel_v.begin(), d_vel_v.end(), 0.f);
+        std::fill(d_vel_w.begin(), d_vel_w.end(), 0.f);
+        std::fill(d_weight_u.begin(), d_weight_u.end(), 0.f);
+        std::fill(d_weight_v.begin(), d_weight_v.end(), 0.f);
+        std::fill(d_weight_w.begin(), d_weight_w.end(), 0.f);
+    }
+};
+
+#endif
