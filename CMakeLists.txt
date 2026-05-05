@@ -39,6 +39,18 @@ if(NOT CPU_ONLY)
         src/sim/p2g.cuh
         src/sim/pressure_solver.cu
         src/sim/grid.cu
+        src/sim/particle.cu
+        src/sim/grid.cu
+        src/sim/pressure_solver.cu
+        src/sim/particle.h
+        src/sim/p2g.cuh
+        src/renderer/shader.cpp
+        external/stb/stb_image.cpp
+        src/shaders/particles.vert
+        src/shaders/particles.frag
+        src/shaders/density.comp
+        src/shaders/domain.frag
+        src/shaders/domain.vert
     )
 endif()
 
@@ -48,6 +60,27 @@ target_include_directories(glad PUBLIC external/glad/include)
 
 add_executable(stream_processor ${SRC_FILES})
 
+# --- 5. Modern Linking & Properties ---
+target_include_directories(stream_processor PRIVATE src external/glad/include external/stb ${CUDAToolkit_INCLUDE_DIRS})
+target_link_libraries(stream_processor PRIVATE
+    OpenGL::GL
+    glfw
+    glad
+    CUDA::cudart
+)
+
+set_target_properties(stream_processor PROPERTIES 
+    CUDA_SEPARABLE_COMPILATION ON
+)
+
+if(MSVC)
+    target_include_directories(stream_processor PUBLIC ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+    # CUDA 13.x CCCL headers require the conforming MSVC preprocessor
+    target_compile_options(stream_processor PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:/Zc:preprocessor>
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>
+    )
+endif()
 # --- 5. Linking & Properties ---
 target_include_directories(stream_processor PRIVATE
     src

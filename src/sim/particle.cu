@@ -13,6 +13,8 @@ __global__ void compute_divergence(DeviceMACGrid grid);
 __global__ void jacobi_iteration(DeviceMACGrid grid, float dt);
 __global__ void apply_pressure(DeviceMACGrid grid, float dt);
 __global__ void enforce_boundary(DeviceMACGrid grid);
+__global__ void mark_solid_sphere(DeviceMACGrid grid, float cx, float cy, float cz, float radius);
+__global__ void enforce_solid_face_velocities(DeviceMACGrid grid);
 
 // Apply gravity only to v-faces adjacent to at least one FLUID cell
 __global__ void add_gravity_to_grid(DeviceMACGrid grid, float dt) {
@@ -34,21 +36,67 @@ __global__ void add_gravity_to_grid(DeviceMACGrid grid, float dt) {
     }
 }
 
+// Activate n reservoir particles at the nozzle position with a hash-based jitter
+__global__ void emit_particles(DeviceParticles dp, int start, int n,
+                               float ex, float ey, float ez, float evy) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    int idx = start + i;
+    float jx = (float)((unsigned)(idx * 2654435761u) % 1000u) / 1000.f * 0.02f - 0.01f;
+    float jz = (float)((unsigned)(idx * 2246822519u) % 1000u) / 1000.f * 0.02f - 0.01f;
+    float jy = (float)((unsigned)(idx * 2166136261u) % 1000u) / 1000.f * 0.30f - 0.15f;
+    dp.x[idx] = ex + jx;
+    dp.y[idx] = ey + jy;
+    dp.z[idx] = ez + jz;
+    // Give particles below the nozzle the velocity they'd have after falling that extra distance,
+    // so the stream looks like a continuous flow rather than discrete batches.
+    float vy_out = evy;
+    if (jy < 0.f) {
+        float v2 = evy * evy + 2.f * 14.45f * (-jy);
+        vy_out = -sqrtf(v2);
+    }
+    dp.vx[idx] = 0.f;
+    dp.vy[idx] = vy_out;
+    dp.vz[idx] = 0.f;
+}
+
 // Advect particles using their (already-updated) velocities, then clamp to domain
-__global__ void advect_and_bounce(int count, float dt, DeviceParticles dp) {
+__global__ void advect_and_bounce(int count, float dt, DeviceParticles dp,
+                                   float sph_cx, float sph_cy, float sph_cz, float sph_r) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < count) {
         dp.x[i] += dp.vx[i] * dt;
         dp.y[i] += dp.vy[i] * dt;
         dp.z[i] += dp.vz[i] * dt;
 
-        // Clamp to domain [-1, 1]^3 with velocity reflection
+        // Box walls (ceiling removed intentionally)
         if (dp.x[i] < -1.f) { dp.x[i] = -1.f; dp.vx[i] *= -0.65f; }
         if (dp.x[i] >  1.f) { dp.x[i] =  1.f; dp.vx[i] *= -0.65f; }
         if (dp.y[i] < -1.f) { dp.y[i] = -1.f; dp.vy[i] *= -0.65f; }
-        if (dp.y[i] >  1.f) { dp.y[i] =  1.f; dp.vy[i] *= -0.65f; }
         if (dp.z[i] < -1.f) { dp.z[i] = -1.f; dp.vz[i] *= -0.65f; }
         if (dp.z[i] >  1.f) { dp.z[i] =  1.f; dp.vz[i] *= -0.65f; }
+
+        // Sphere collision
+        if (sph_r > 0.f) {
+            float dx = dp.x[i] - sph_cx;
+            float dy = dp.y[i] - sph_cy;
+            float dz = dp.z[i] - sph_cz;
+            float dist = sqrtf(dx*dx + dy*dy + dz*dz);
+            if (dist < sph_r && dist > 0.f) {
+                float nx = dx/dist, ny = dy/dist, nz = dz/dist;
+                // push particle to surface
+                dp.x[i] = sph_cx + nx * sph_r;
+                dp.y[i] = sph_cy + ny * sph_r;
+                dp.z[i] = sph_cz + nz * sph_r;
+                // reflect velocity with restitution 0.65
+                float vdotn = dp.vx[i]*nx + dp.vy[i]*ny + dp.vz[i]*nz;
+                if (vdotn < 0.f) {
+                    dp.vx[i] -= 1.65f * vdotn * nx;
+                    dp.vy[i] -= 1.65f * vdotn * ny;
+                    dp.vz[i] -= 1.65f * vdotn * nz;
+                }
+            }
+        }
     }
 }
 
@@ -69,7 +117,7 @@ ParticleSystem::ParticleSystem() {
 
 ParticleSystem::~ParticleSystem() {}
 
-bool ParticleSystem::initialise_particles(int count) {
+bool ParticleSystem::initialise_particles(int count, int preset) {
     // sorry this is such a mess now
     h_x.clear();
     h_y.clear();
@@ -95,21 +143,95 @@ bool ParticleSystem::initialise_particles(int count) {
     h_fy.resize(count);
     h_fz.resize(count);
 
-    std::mt19937 rng(42);
-    std::uniform_real_distribution<float> dist(-0.8f, 0.8f);
-    std::uniform_real_distribution<float> dist_z(-0.9f, -0.1f);
-    std::uniform_real_distribution<float> dist_v(-1.5f, 1.5f);
+    switch (preset) {
+        case 4: sphere = {0.f, 0.f, 0.f, 0.35f}; break;
+        default: sphere = {}; break;
+    }
 
-    for (int i = 0; i < count; i++) {
-        h_x[i] = dist(rng);
-        h_y[i] = dist(rng);
-        h_z[i] = dist_z(rng);
-        h_vx[i] = dist_v(rng);
-        h_vy[i] = dist_v(rng);
-        h_vz[i] = dist_v(rng);
-        h_fx[i] = 0.f;
-        h_fy[i] = 0.f;
-        h_fz[i] = 0.f;
+    std::mt19937 rng(42);
+
+    if (preset == 3) {
+        // 90% settled pool at the bottom (active immediately).
+        // 10% reservoir — activated gradually each frame by emit_particles kernel.
+        int pool = (count * 9) / 10;
+
+        std::uniform_real_distribution<float> px(-0.8f, 0.8f);
+        std::uniform_real_distribution<float> py(-0.9f, -0.6f);
+        std::uniform_real_distribution<float> pz(-0.8f, 0.8f);
+        for (int i = 0; i < pool; i++) {
+            h_x[i] = px(rng); h_y[i] = py(rng); h_z[i] = pz(rng);
+            h_vx[i] = 0.f;    h_vy[i] = 0.f;    h_vz[i] = 0.f;
+            h_fx[i] = 0.f;    h_fy[i] = 0.f;    h_fz[i] = 0.f;
+        }
+        // Reservoir: parked at floor so they don't affect physics before activation
+        for (int i = pool; i < count; i++) {
+            h_x[i] = 0.f; h_y[i] = -0.99f; h_z[i] = 0.f;
+            h_vx[i] = 0.f; h_vy[i] = 0.f;  h_vz[i] = 0.f;
+            h_fx[i] = 0.f; h_fy[i] = 0.f;  h_fz[i] = 0.f;
+        }
+
+        active_count = pool;
+        emit_head    = pool;
+        emit_end     = count;
+        emit_rate    = 500;   // particles per frame → ~4 s of pour at 50 fps
+        emit_delay   = 120;   // ~2.5 s at 50 fps for pool to reach equilibrium
+        emit_x = 0.f; emit_y = 0.95f; emit_z = 0.f; emit_vy = -7.0f;
+    } else if (preset == 4) {
+        // Small pool below the sphere, rest emitted from a tap directly above it.
+        int pool = count / 5;  // 20% pool below sphere
+
+        std::uniform_real_distribution<float> px(-0.8f, 0.8f);
+        std::uniform_real_distribution<float> py(-0.9f, -0.5f);  // below sphere (bottom is y=-0.35)
+        std::uniform_real_distribution<float> pz(-0.8f, 0.8f);
+        for (int i = 0; i < pool; i++) {
+            h_x[i] = px(rng); h_y[i] = py(rng); h_z[i] = pz(rng);
+            h_vx[i] = 0.f;    h_vy[i] = 0.f;    h_vz[i] = 0.f;
+            h_fx[i] = 0.f;    h_fy[i] = 0.f;    h_fz[i] = 0.f;
+        }
+        for (int i = pool; i < count; i++) {
+            h_x[i] = 0.f; h_y[i] = -0.99f; h_z[i] = 0.f;
+            h_vx[i] = 0.f; h_vy[i] = 0.f;  h_vz[i] = 0.f;
+            h_fx[i] = 0.f; h_fy[i] = 0.f;  h_fz[i] = 0.f;
+        }
+
+        active_count = pool;
+        emit_head    = pool;
+        emit_end     = count;
+        emit_rate    = 500;
+        emit_delay   = 120;
+        emit_x = 0.f; emit_y = 0.95f; emit_z = 0.f; emit_vy = -7.0f;
+    } else {
+        active_count = count;
+        emit_head = emit_end = emit_rate = emit_delay = 0;
+
+        struct SpawnBox { float xlo, xhi, ylo, yhi, zlo, zhi; };
+        struct VelBias  { float vxlo, vxhi, vylo, vyhi, vzlo, vzhi; };
+
+        SpawnBox box;
+        VelBias  vel;
+        switch (preset) {
+            case 2:
+                box = {-0.15f, 0.15f,  0.5f, 0.9f, -0.15f, 0.15f};
+                vel = {-0.5f,  0.5f,  -8.0f,-4.0f,  -0.5f,  0.5f};
+                break;
+            default: // preset 1
+                box = {-0.8f,  0.8f,  -0.8f, 0.8f,  -0.9f, -0.1f};
+                vel = {-1.5f,  1.5f,  -1.5f, 1.5f,  -1.5f,  1.5f};
+                break;
+        }
+
+        std::uniform_real_distribution<float> dist_x(box.xlo, box.xhi);
+        std::uniform_real_distribution<float> dist_y(box.ylo, box.yhi);
+        std::uniform_real_distribution<float> dist_z(box.zlo, box.zhi);
+        std::uniform_real_distribution<float> dist_vx(vel.vxlo, vel.vxhi);
+        std::uniform_real_distribution<float> dist_vy(vel.vylo, vel.vyhi);
+        std::uniform_real_distribution<float> dist_vz(vel.vzlo, vel.vzhi);
+
+        for (int i = 0; i < count; i++) {
+            h_x[i] = dist_x(rng); h_y[i] = dist_y(rng); h_z[i] = dist_z(rng);
+            h_vx[i] = dist_vx(rng); h_vy[i] = dist_vy(rng); h_vz[i] = dist_vz(rng);
+            h_fx[i] = 0.f; h_fy[i] = 0.f; h_fz[i] = 0.f;
+        }
     }
 
     // putting vectors in VRAM:
@@ -138,7 +260,20 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     DeviceMACGrid   dg = grid.get_device_grid();
 
     int tpb = 256;  // threads per block
-    int particle_blocks = (count + tpb - 1) / tpb;
+
+    // Emit next batch of reservoir particles at the nozzle before physics
+    if (emit_delay > 0) { emit_delay--; }
+    else if (emit_head < emit_end && emit_rate > 0) {
+        int n = min(emit_rate, emit_end - emit_head);
+        int emit_blocks = (n + tpb - 1) / tpb;
+        emit_particles<<<emit_blocks, tpb>>>(dp, emit_head, n,
+            emit_x, emit_y, emit_z, emit_vy);
+        emit_head    += n;
+        active_count += n;
+    }
+
+    int particle_blocks = (active_count + tpb - 1) / tpb;
+    if (particle_blocks == 0) particle_blocks = 1;
 
     int cell_total = grid.nx * grid.ny * grid.nz;
     int cell_blocks = (cell_total + tpb - 1) / tpb;
@@ -154,11 +289,16 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
     dg = grid.get_device_grid();
 
     // 2. Particle-to-Grid transfer
-    p2g_transfer<<<particle_blocks, tpb>>>(dg, dp, count);
+    p2g_transfer<<<particle_blocks, tpb>>>(dg, dp, active_count);
     //cudaDeviceSynchronize();
 
     p2g_normalise<<<face_blocks, tpb>>>(dg);
     //cudaDeviceSynchronize();
+
+    // Stamp sphere cells as SOLID so the pressure solve routes around them
+    if (sphere.active()) {
+        mark_solid_sphere<<<cell_blocks, tpb>>>(dg, sphere.cx, sphere.cy, sphere.cz, sphere.radius);
+    }
 
     // 3. Snapshot velocity for FLIP before gravity+pressure so delta carries both
     thrust::copy(grid.d_vel_u.begin(), grid.d_vel_u.end(), grid.d_vel_u_old.begin());
@@ -172,6 +312,7 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
 
     // Enforce wall BCs after gravity
     enforce_boundary<<<face_blocks, tpb>>>(dg);
+    if (sphere.active()) enforce_solid_face_velocities<<<face_blocks, tpb>>>(dg);
     //cudaDeviceSynchronize();
 
     // 4. Pressure solve
@@ -199,20 +340,22 @@ void ParticleSystem::step(float dt, MACGrid& grid) {
 
     // Enforce wall BCs after pressure projection
     enforce_boundary<<<face_blocks, tpb>>>(dg);
+    if (sphere.active()) enforce_solid_face_velocities<<<face_blocks, tpb>>>(dg);
     //cudaDeviceSynchronize();
 
     // 5. Grid-to-Particle transfer
-    g2p_transfer<<<particle_blocks, tpb>>>(dg, dp, count);
+    g2p_transfer<<<particle_blocks, tpb>>>(dg, dp, active_count);
     //cudaDeviceSynchronize();
 
     // 6. Advect particles with the new velocities
-    advect_and_bounce<<<particle_blocks, tpb>>>(count, dt, dp);
+    advect_and_bounce<<<particle_blocks, tpb>>>(active_count, dt, dp,
+        sphere.cx, sphere.cy, sphere.cz, sphere.radius);
     //cudaDeviceSynchronize();
 
-    // 7. Sync positions back to CPU for rendering
-    thrust::copy(d_x.begin(), d_x.end(), h_x.begin());
-    thrust::copy(d_y.begin(), d_y.end(), h_y.begin());
-    thrust::copy(d_z.begin(), d_z.end(), h_z.begin());
+    // 7. Sync active positions back to CPU for rendering
+    thrust::copy(d_x.begin(), d_x.begin() + active_count, h_x.begin());
+    thrust::copy(d_y.begin(), d_y.begin() + active_count, h_y.begin());
+    thrust::copy(d_z.begin(), d_z.begin() + active_count, h_z.begin());
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) std::cout << "CUDA Error: " << cudaGetErrorString(err) << "\n";

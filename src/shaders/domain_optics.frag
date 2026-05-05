@@ -9,6 +9,8 @@ uniform sampler3D densityTexture;
 uniform vec3 scatteringCoefficients;
 uniform float densityMultiplier;
 uniform vec3 lightPos;
+uniform vec3 sphereCenter;
+uniform float sphereRadius;
 
 out vec4 FragColor;
 
@@ -62,6 +64,17 @@ float densityAlongRay(vec3 pos, vec3 dir, float stepSize, vec3 boxMin) {
 }
 
 
+// Returns distance to sphere entry, or -1 if miss
+float sphereIntersect(vec3 ro, vec3 rd, vec3 center, float radius) {
+    vec3 oc = ro - center;
+    float b = dot(oc, rd);
+    float c = dot(oc, oc) - radius * radius;
+    float disc = b * b - c;
+    if (disc < 0.0) return -1.0;
+    float t = -b - sqrt(disc);
+    return (t > 0.0) ? t : -1.0;
+}
+
 void main() {
     // 1. Ray direction in perfect, unwarped World Space
     vec3 rayDir = normalize(vWorldPos - vCamWorldPos);
@@ -114,8 +127,65 @@ void main() {
         currentWorldPos += rayDir * stepSize;
         tNear += stepSize;
     }
+    // Sphere rendering (glass ball)
+    float tSphere = (sphereRadius > 0.0) ? sphereIntersect(vCamWorldPos, rayDir, sphereCenter, sphereRadius) : -1.0;
+    float tFluid  = hitSurface ? length(hitWorldPos - vCamWorldPos) : 1e9;
+    bool hitSphereFirst = (tSphere > 0.0 && tSphere < tFluid);
+
     vec3 normal = vec3(0.0);
-    if(hitSurface) {
+    if (hitSphereFirst) {
+        vec3 sHitPos = vCamWorldPos + rayDir * tSphere;
+        vec3 sNormal = normalize(sHitPos - sphereCenter);
+
+        float fresnel = pow(1.0 - max(dot(sNormal, -rayDir), 0.0), 5.0);
+        fresnel = mix(0.04, 1.0, fresnel);
+
+        vec3 reflDir = reflect(rayDir, sNormal);
+        vec3 refrDir = refract(rayDir, sNormal, 1.0 / 1.5); // glass IOR
+
+        // Reflection: check if reflected ray hits fluid
+        vec3 reflColor = backgroundColor;
+        vec3 reflPos = sHitPos + reflDir * (stepSize * 2.0);
+        for (int i = 0; i < 60; i++) {
+            vec3 tp = (reflPos - boxMin) / domainSize;
+            if (any(lessThan(tp, vec3(0.0))) || any(greaterThan(tp, vec3(1.0)))) break;
+            if (texture(densityTexture, tp).r > surfaceThreshold) {
+                reflColor = vec3(scatteringCoefficients) * 0.5;
+                break;
+            }
+            reflPos += reflDir * stepSize;
+        }
+
+        // Refraction: march through glass sphere to exit, then into scene
+        vec3 refrColor = backgroundColor;
+        vec3 refrPos = sHitPos + refrDir * (stepSize * 2.0);
+        // find sphere exit
+        vec3 ocExit = refrPos - sphereCenter;
+        float bE = dot(ocExit, refrDir);
+        float cE = dot(ocExit, ocExit) - sphereRadius * sphereRadius;
+        float discE = bE * bE - cE;
+        if (discE >= 0.0) {
+            float tExit = -bE + sqrt(discE);
+            vec3 exitPos = refrPos + refrDir * tExit;
+            vec3 exitNormal = normalize(sphereCenter - exitPos); // inward → outward at exit
+            vec3 refrDir2 = refract(refrDir, -exitNormal, 1.5); // glass→air
+            if (length(refrDir2) < 0.001) refrDir2 = refrDir; // total internal reflection fallback
+            vec3 marchPos = exitPos + refrDir2 * (stepSize * 2.0);
+            for (int i = 0; i < 80; i++) {
+                vec3 tp = (marchPos - boxMin) / domainSize;
+                if (any(lessThan(tp, vec3(0.0))) || any(greaterThan(tp, vec3(1.0)))) break;
+                if (texture(densityTexture, tp).r > surfaceThreshold) {
+                    refrColor = vec3(scatteringCoefficients) * 0.6;
+                    break;
+                }
+                marchPos += refrDir2 * stepSize;
+            }
+        }
+
+        vec3 finalColor = mix(refrColor, reflColor, fresnel);
+        FragColor = vec4(finalColor, 1.0);
+
+    } else if(hitSurface) {
         vec3 normal = calculateNormal(hitTexPos);
         
         // Fresnel: 1.0 at grazing angles (edges), near 0.0 looking straight on
